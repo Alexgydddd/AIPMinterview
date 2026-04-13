@@ -1,0 +1,25 @@
+# 本地构建产物（部署时会重新执行 npm run build）
+dist
+
+# 依赖在 Vercel 构建机上通过 package-lock 重新安装，无需上传本机 node_modules
+node_modules
+
+# 环境变量与密钥（在 Vercel Project → Environment Variables 中配置）
+.env
+.env.*
+!.env.example
+
+# Vercel CLI 本地链接状态
+.vercel
+
+# 系统与日志
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 历史 / 迁移资料（不参与构建与 Serverless）
+migrated_prompt_history

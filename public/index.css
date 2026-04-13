@@ -1,0 +1,72 @@
+/**
+ * 全局样式（与 index.html 中 Tailwind CDN 配合）
+ * 置于 public/ 以便开发与构建时均以 /index.css 提供
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+/* 音频可视化波形动画 - 5 个音频柱状图使用不同的延迟和持续时间 */
+@keyframes audioWave1 {
+  0% { height: 8px; }
+  100% { height: 32px; }
+}
+@keyframes audioWave2 {
+  0% { height: 8px; }
+  100% { height: 40px; }
+}
+@keyframes audioWave3 {
+  0% { height: 8px; }
+  100% { height: 28px; }
+}
+@keyframes audioWave4 {
+  0% { height: 8px; }
+  100% { height: 36px; }
+}
+@keyframes audioWave5 {
+  0% { height: 8px; }
+  100% { height: 24px; }
+}
+
+/* 音频柱状图基础样式 */
+.audio-bar-1, .audio-bar-2, .audio-bar-3, .audio-bar-4, .audio-bar-5 {
+  height: 8px;
+  transition: none;
+}
+
+/* 每个音频柱带唯一动画 */
+.audio-bar-1 {
+  animation: audioWave1 0.6s ease-in-out infinite alternate !important;
+}
+.audio-bar-2 {
+  animation: audioWave2 0.6s ease-in-out infinite alternate !important;
+  animation-delay: 0.1s !important;
+}
+.audio-bar-3 {
+  animation: audioWave3 0.6s ease-in-out infinite alternate !important;
+  animation-delay: 0.2s !important;
+}
+.audio-bar-4 {
+  animation: audioWave4 0.6s ease-in-out infinite alternate !important;
+  animation-delay: 0.15s !important;
+}
+.audio-bar-5 {
+  animation: audioWave5 0.6s ease-in-out infinite alternate !important;
+  animation-delay: 0.25s !important;
+}

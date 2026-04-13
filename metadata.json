@@ -1,0 +1,7 @@
+{
+  "name": "Remix: PM Alex的面试分身",
+  "description": "An AI-powered assistant for Project Managers to analyze JDs, optimize resumes with STAR method, and practice behavioral interviews.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
