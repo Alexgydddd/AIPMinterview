@@ -110,7 +110,7 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
       
       <div className="mt-20 flex justify-center text-slate-400 text-xs font-medium flex-col items-center gap-3">
          <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full">
-            <ShieldCheck size={14} /> 数据安全承诺：您的简历仅用于 AI 分析，面试结束后自动清除
+            <ShieldCheck size={14} /> 数据安全承诺：您的简历仅用于 AI 分析，不会上传至第三方服务器
          </div>
       </div>
     </div>
