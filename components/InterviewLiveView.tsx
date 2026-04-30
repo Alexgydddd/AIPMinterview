@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { generateInterviewReply } from '../services/geminiService';
 import { synthesizeSpeech } from '../services/minimaxService';
-import { Mic, MicOff, PhoneOff, Building2, Play, ChevronLeft, MessageSquareText, Eye, EyeOff } from 'lucide-react';
+import { Mic, PhoneOff, Building2, Play, ChevronLeft, MessageSquareText, Eye, EyeOff, Clock, MessageCircle } from 'lucide-react';
 import { InterviewFeedback } from '../types';
 import { devLog, devError } from '../utils/logger';
 
@@ -16,10 +16,9 @@ interface Props {
 
 const BARS = 5;
 
-interface AudioBar {
-  height: number;
-  delay: number;
-}
+const MIN_ROUNDS = 3;
+const SUGGESTED_ROUNDS = 6;
+const MAX_ROUNDS = 12;
 
 const AudioVisualizer = memo(({ isActive, color = 'bg-white' }: { isActive: boolean, color?: string }) => {
   return (
@@ -41,18 +40,12 @@ const AudioVisualizer = memo(({ isActive, color = 'bg-white' }: { isActive: bool
 
 AudioVisualizer.displayName = 'AudioVisualizer';
 
-// 转录格式常量
 const CANDIDATE_PREFIX = '候选人: ';
 const INTERVIEWER_PREFIX = '面试官: ';
 
-/**
- * 解析单行转录文本，返回角色和内容
- * 格式：候选人: 内容 或 面试官: 内容
- */
 function parseTranscriptLine(line: string): { role: 'user' | 'assistant'; content: string } | null {
   const trimmed = line.trim();
   if (!trimmed) return null;
-
   if (trimmed.startsWith(CANDIDATE_PREFIX)) {
     const content = trimmed.slice(CANDIDATE_PREFIX.length).trim();
     return content ? { role: 'user', content } : null;
@@ -64,56 +57,48 @@ function parseTranscriptLine(line: string): { role: 'user' | 'assistant'; conten
   return null;
 }
 
-/**
- * 从转录文本构建消息历史
- */
 function buildMessagesFromTranscript(transcript: string): { role: 'user' | 'assistant'; content: string }[] {
   const messages: { role: 'user' | 'assistant'; content: string }[] = [];
-  const lines = transcript.split('\n');
-
-  for (const line of lines) {
+  for (const line of transcript.split('\n')) {
     const parsed = parseTranscriptLine(line);
-    if (parsed) {
-      messages.push(parsed);
-    }
+    if (parsed) messages.push(parsed);
   }
-
   return messages;
 }
 
-/**
- * 清理音频资源
- */
+function countRounds(transcript: string): number {
+  let count = 0;
+  for (const line of transcript.split('\n')) {
+    if (line.trim().startsWith(CANDIDATE_PREFIX)) count++;
+  }
+  return count;
+}
+
 async function cleanupAudioResources(
   audioSourceRef: React.MutableRefObject<AudioBufferSourceNode | null>,
   audioContextRef: React.MutableRefObject<AudioContext | null>
 ): Promise<void> {
-  // 清理音频源
   if (audioSourceRef.current) {
-    try {
-      audioSourceRef.current.disconnect();
-    } catch {}
+    try { audioSourceRef.current.disconnect(); } catch {}
     audioSourceRef.current = null;
   }
-
-  // 清理音频上下文
   if (audioContextRef.current) {
     try {
-      if (audioContextRef.current.state !== 'closed') {
-        await audioContextRef.current.close();
-      }
+      if (audioContextRef.current.state !== 'closed') await audioContextRef.current.close();
     } catch {}
     audioContextRef.current = null;
   }
 }
 
+/** 格式化秒为 mm:ss */
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 const InterviewLiveView: React.FC<Props> = ({
-  companyName,
-  jdText,
-  resumeText,
-  previousFeedback,
-  onFinish,
-  onBack,
+  companyName, jdText, resumeText, previousFeedback, onFinish, onBack,
 }) => {
   const [isStarted, setIsStarted] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -123,23 +108,40 @@ const InterviewLiveView: React.FC<Props> = ({
   const [showTranscript, setShowTranscript] = useState(true);
   const [userInput, setUserInput] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [roundCount, setRoundCount] = useState(0);
 
-  // Audio Refs
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
-
-  // Transcript Ref (用于持久化和 AI 上下文)
   const transcriptRef = useRef<string>('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auto-scroll transcript
+  // 计时器
+  useEffect(() => {
+    if (isStarted && isConnected) {
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds(prev => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isStarted, isConnected]);
+
+  // 统计轮次
+  useEffect(() => {
+    setRoundCount(countRounds(transcriptRef.current));
+  }, [liveTranscript]);
+
+  // 自动滚动
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [liveTranscript, showTranscript]);
 
-  // 初始化，首次打开面试官问候
+  // 首次打开面试官问候
   useEffect(() => {
     if (isStarted && isConnected && liveTranscript === '') {
       handleAiReply('');
@@ -181,42 +183,28 @@ const InterviewLiveView: React.FC<Props> = ({
     setError(null);
     transcriptRef.current = '';
     setLiveTranscript('');
+    setElapsedSeconds(0);
+    setRoundCount(0);
   }, []);
 
   const playAudioFromBuffer = useCallback(async (audioBuffer: ArrayBuffer) => {
     try {
-      // 获取 AudioContext（兼容 Safari）
       const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContextClass();
-      }
+      if (!audioContextRef.current) audioContextRef.current = new AudioContextClass();
       const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') await ctx.resume();
 
-      // 确保上下文处于运行状态
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-
-      // 解码并播放音频
       const decoded = await ctx.decodeAudioData(audioBuffer.slice(0));
       const source = ctx.createBufferSource();
       source.buffer = decoded;
       source.connect(ctx.destination);
-
-      // 更新 refs
       audioSourceRef.current = source;
       setIsAiSpeaking(true);
-
-      source.onended = () => {
-        setIsAiSpeaking(false);
-      };
-
+      source.onended = () => setIsAiSpeaking(false);
       source.start();
     } catch (err) {
       devError('[Interview] 音频播放失败:', err);
       setIsAiSpeaking(false);
-      setError('音频播放失败，请检查网络后重试');
     }
   }, []);
 
@@ -226,10 +214,8 @@ const InterviewLiveView: React.FC<Props> = ({
     setError(null);
 
     try {
-      // 从转录构建消息历史
       const messages = buildMessagesFromTranscript(transcriptRef.current);
 
-      // 如果有新一轮用户输入
       if (userMessage?.trim()) {
         const userText = userMessage.trim();
         transcriptRef.current += `${CANDIDATE_PREFIX}${userText}\n`;
@@ -237,26 +223,20 @@ const InterviewLiveView: React.FC<Props> = ({
         messages.push({ role: 'user', content: userText });
       }
 
-      // 获取面试官 AI 回复
       const systemPrompt = getSystemInstruction();
       const aiText = await generateInterviewReply({ systemPrompt, conversation: messages });
 
-      if (!aiText) {
-        throw new Error('面试官回复为空');
-      }
+      if (!aiText) throw new Error('面试官回复为空');
 
-      // 更新转录
       transcriptRef.current += `${INTERVIEWER_PREFIX}${aiText}\n`;
       setLiveTranscript(prev => prev + `\n${INTERVIEWER_PREFIX}${aiText}\n`);
 
-      // 播放语音
       try {
         const speech = await synthesizeSpeech(aiText);
         await playAudioFromBuffer(speech.arrayBuffer);
       } catch (ttsErr) {
         devError('[Interview] TTS 合成失败:', ttsErr);
         setIsAiSpeaking(false);
-        // TTS 失败不影响对话继续
       }
     } catch (err) {
       devError('[Interview] AI 回复失败:', err);
@@ -274,21 +254,15 @@ const InterviewLiveView: React.FC<Props> = ({
   }, [userInput, isLoading, handleAiReply]);
 
   const handleDisconnect = useCallback(async () => {
-    // 清理音频资源
+    if (timerRef.current) clearInterval(timerRef.current);
     await cleanupAudioResources(audioSourceRef, audioContextRef);
-
-    // 传递最终转录
     onFinish(transcriptRef.current);
   }, [onFinish]);
 
-  // 组件卸载时清理
   useEffect(() => {
-    return () => {
-      cleanupAudioResources(audioSourceRef, audioContextRef);
-    };
+    return () => { cleanupAudioResources(audioSourceRef, audioContextRef); };
   }, []);
 
-  // 禁用 Enter 键换行，支持 Shift+Enter 换行
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -296,40 +270,35 @@ const InterviewLiveView: React.FC<Props> = ({
     }
   }, [handleSend]);
 
+  // 判断是否达到建议结束轮次
+  const hasReachedSuggestedRounds = roundCount >= SUGGESTED_ROUNDS;
+  const hasReachedMinRounds = roundCount >= MIN_ROUNDS;
+
   if (!isStarted) {
     return (
-      <div className="max-w-2xl mx-auto mt-12 animate-fade-in px-6">
+      <div className="max-w-2xl mx-auto mt-6 md:mt-12 animate-fade-in px-4 md:px-6">
         <button onClick={onBack} className="mb-6 flex items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors text-sm font-medium">
           <ChevronLeft size={18} /> 返回
         </button>
 
-        <div className="bg-white rounded-[2.5rem] p-12 shadow-2xl shadow-slate-200 border border-slate-100 text-center relative overflow-hidden group">
+        <div className="bg-white rounded-2xl md:rounded-[2.5rem] p-8 md:p-12 shadow-2xl shadow-slate-200 border border-slate-100 text-center relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
-
           <div className="relative z-10">
-            <div className="w-28 h-28 bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-full flex items-center justify-center mx-auto mb-8 shadow-xl group-hover:scale-105 transition-transform duration-500">
-              <Building2 size={40} />
+            <div className="w-24 h-24 md:w-28 md:h-28 bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-full flex items-center justify-center mx-auto mb-6 md:mb-8 shadow-xl group-hover:scale-105 transition-transform duration-500">
+              <Building2 size={36} />
             </div>
-
-            <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">即将连线面试官</h2>
-            <p className="text-slate-500 text-lg mb-10 max-w-md mx-auto leading-relaxed">
+            <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-4 tracking-tight">即将连线面试官</h2>
+            <p className="text-slate-500 text-base md:text-lg mb-8 max-w-md mx-auto leading-relaxed">
               <span className="font-bold text-slate-800">{companyName}</span> 的资深项目专家已在等候。<br />
-              请保持环境安静，调整好麦克风。
+              建议面试 {SUGGESTED_ROUNDS} 轮对话，约 15-20 分钟。
             </p>
-
             <button
               onClick={startInterview}
-              className="px-12 py-5 bg-slate-900 text-white rounded-full font-bold text-lg shadow-2xl shadow-slate-400 hover:bg-slate-800 hover:scale-[1.02] active:scale-95 transition-all w-full max-w-xs flex items-center justify-center gap-3 mx-auto"
+              className="px-10 md:px-12 py-4 md:py-5 bg-slate-900 text-white rounded-full font-bold text-lg shadow-2xl shadow-slate-400 hover:bg-slate-800 hover:scale-[1.02] active:scale-95 transition-all w-full max-w-xs flex items-center justify-center gap-3 mx-auto"
             >
               <Play size={24} className="fill-current" />
-              接通语音 (Connect)
+              开始面试
             </button>
-
-            {error && (
-              <p className="mt-6 text-rose-500 font-medium bg-rose-50 py-2 px-4 rounded-lg inline-block text-sm">
-                {error}
-              </p>
-            )}
           </div>
         </div>
       </div>
@@ -337,46 +306,69 @@ const InterviewLiveView: React.FC<Props> = ({
   }
 
   return (
-    <div className="max-w-4xl mx-auto mt-4 animate-fade-in px-4 h-[80vh] flex flex-col">
-      <div className="bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-400 relative flex-1 flex flex-col border-4 border-slate-800">
+    <div className="max-w-4xl mx-auto mt-2 md:mt-4 animate-fade-in px-2 md:px-4 h-[80vh] flex flex-col">
+      <div className="bg-slate-900 rounded-2xl md:rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-400 relative flex-1 flex flex-col border-2 md:border-4 border-slate-800">
         {/* Top Bar */}
-        <div className="flex justify-between items-center p-6 z-20">
+        <div className="flex justify-between items-center p-4 md:p-6 z-20">
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></div>
               <span className="text-slate-400 text-xs font-bold tracking-widest uppercase">
-                {isConnected ? 'LIVE CONNECTION' : 'CONNECTING...'}
+                {isConnected ? 'LIVE' : 'CONNECTING...'}
               </span>
             </div>
-            <h2 className="text-white font-bold text-lg">{companyName}</h2>
+            <h2 className="text-white font-bold text-base md:text-lg">{companyName}</h2>
           </div>
 
-          <button
-            onClick={() => setShowTranscript(!showTranscript)}
-            className="bg-white/10 p-2 rounded-full text-white/70 hover:bg-white/20 transition-all backdrop-blur-md"
-            title="Toggle Transcript"
-          >
-            {showTranscript ? <Eye size={18} /> : <EyeOff size={18} />}
-          </button>
+          {/* 面试统计信息 */}
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
+              <Clock size={14} className="text-slate-400" />
+              <span className="text-white text-xs font-mono font-bold">{formatTime(elapsedSeconds)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
+              <MessageCircle size={14} className="text-slate-400" />
+              <span className={`text-xs font-bold font-mono ${hasReachedSuggestedRounds ? 'text-emerald-400' : 'text-white'}`}>
+                {roundCount}/{SUGGESTED_ROUNDS}
+              </span>
+            </div>
+            <button
+              onClick={() => setShowTranscript(!showTranscript)}
+              className="bg-white/10 p-2 rounded-full text-white/70 hover:bg-white/20 transition-all backdrop-blur-md"
+              title="切换对话记录"
+            >
+              {showTranscript ? <Eye size={18} /> : <EyeOff size={18} />}
+            </button>
+          </div>
         </div>
+
+        {/* 轮次提示 */}
+        {hasReachedSuggestedRounds && !hasReachedMinRounds && (
+          <div className="mx-4 mb-2 px-4 py-2 bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-center">
+            <span className="text-emerald-300 text-xs font-bold">
+              🎯 已完成建议轮次！可以点击结束按钮生成面试报告，或继续深入练习
+            </span>
+          </div>
+        )}
+        {roundCount >= MAX_ROUNDS && (
+          <div className="mx-4 mb-2 px-4 py-2 bg-amber-500/20 border border-amber-500/30 rounded-xl text-center">
+            <span className="text-amber-300 text-xs font-bold">
+              ⏰ 已进行 {roundCount} 轮对话，建议结束面试生成评估报告
+            </span>
+          </div>
+        )}
 
         {/* Center: The Persona */}
         <div className="flex-1 flex flex-col items-center justify-center relative z-10">
-          {/* Breathing Halo */}
-          <div
-            className={`absolute w-96 h-96 rounded-full bg-indigo-500/20 blur-[80px] transition-all duration-1000 ${
-              isAiSpeaking ? 'scale-125 opacity-40' : 'scale-100 opacity-20'
-            }`}
-          ></div>
+          <div className={`absolute w-96 h-96 rounded-full bg-indigo-500/20 blur-[80px] transition-all duration-1000 ${
+            isAiSpeaking ? 'scale-125 opacity-40' : 'scale-100 opacity-20'
+          }`}></div>
 
-          {/* The Avatar Circle */}
-          <div
-            className={`w-40 h-40 rounded-full bg-gradient-to-b from-slate-700 to-slate-800 p-1 shadow-2xl relative mb-8 transition-transform duration-500 ${
-              isAiSpeaking ? 'scale-105' : 'scale-100'
-            }`}
-          >
+          <div className={`w-32 h-32 md:w-40 md:h-40 rounded-full bg-gradient-to-b from-slate-700 to-slate-800 p-1 shadow-2xl relative mb-6 md:mb-8 transition-transform duration-500 ${
+            isAiSpeaking ? 'scale-105' : 'scale-100'
+          }`}>
             <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center relative overflow-hidden">
-              <span className="text-6xl filter drop-shadow-lg">👨‍💼</span>
+              <span className="text-5xl md:text-6xl filter drop-shadow-lg">👨‍💼</span>
               {isAiSpeaking && (
                 <div className="absolute inset-0 rounded-full border-2 border-indigo-400/50 animate-ping"></div>
               )}
@@ -388,31 +380,29 @@ const InterviewLiveView: React.FC<Props> = ({
             {isAiSpeaking ? (
               <div className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500/20 rounded-full border border-indigo-500/30 backdrop-blur-md">
                 <AudioVisualizer isActive={true} color="bg-indigo-300" />
-                <span className="text-indigo-200 text-xs font-bold uppercase tracking-wider">
-                  正在说话...
-                </span>
+                <span className="text-indigo-200 text-xs font-bold uppercase tracking-wider">正在说话...</span>
               </div>
             ) : isLoading ? (
               <div className="flex items-center gap-2 px-4 py-1.5 bg-amber-500/20 rounded-full border border-amber-500/30 backdrop-blur-md">
-                <span className="text-amber-200 text-xs font-bold uppercase tracking-wider animate-pulse">
-                  AI思考中...
-                </span>
+                <span className="text-amber-200 text-xs font-bold uppercase tracking-wider animate-pulse">AI思考中...</span>
               </div>
             ) : (
               <div className="flex items-center gap-2 px-4 py-1.5 bg-white/5 rounded-full border border-white/10 backdrop-blur-md">
                 <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
-                <span className="text-slate-300 text-xs font-bold uppercase tracking-wider">Listening...</span>
+                <span className="text-slate-300 text-xs font-bold uppercase tracking-wider">
+                  {hasReachedMinRounds ? '可以结束或继续...' : '请输入回答...'}
+                </span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Transcript Overlay (Dynamic) */}
+        {/* Transcript Overlay */}
         {showTranscript && (
-          <div className="absolute bottom-32 left-0 w-full px-8 flex justify-center z-20 pointer-events-none">
+          <div className="absolute bottom-32 left-0 w-full px-4 md:px-8 flex justify-center z-20 pointer-events-none">
             <div
               ref={scrollRef}
-              className="bg-black/40 backdrop-blur-lg border border-white/10 p-4 rounded-2xl max-w-2xl w-full max-h-40 overflow-y-auto text-center mask-image-gradient"
+              className="bg-black/40 backdrop-blur-lg border border-white/10 p-3 md:p-4 rounded-2xl max-w-2xl w-full max-h-40 overflow-y-auto text-center"
             >
               <p className="text-white/90 text-sm font-medium leading-relaxed whitespace-pre-wrap">
                 {liveTranscript || <span className="text-white/30 italic">等待对话开始...</span>}
@@ -422,25 +412,29 @@ const InterviewLiveView: React.FC<Props> = ({
         )}
 
         {/* Bottom Controls */}
-        <div className="bg-slate-950 p-6 flex justify-center items-center gap-8 z-30">
+        <div className="bg-slate-950 p-3 md:p-6 flex flex-col md:flex-row justify-center items-center gap-3 md:gap-8 z-30">
           <button
-            onClick={() => setError('实时语音识别功能正在开发中，敬请期待')}
-            className="w-14 h-14 rounded-full flex items-center justify-center transition-all bg-white/10 text-white hover:bg-white/20"
-            title="实时语音识别功能开发中"
+            onClick={() => setError('语音输入即将上线，当前请使用文字输入')}
+            className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center transition-all bg-white/10 text-white hover:bg-white/20"
+            title="语音输入开发中"
           >
-            <Mic size={24} />
+            <Mic size={22} />
           </button>
 
           <button
             onClick={handleDisconnect}
-            className="w-20 h-20 rounded-full bg-rose-600 text-white shadow-lg shadow-rose-900/50 hover:bg-rose-700 hover:scale-105 active:scale-95 transition-all flex items-center justify-center"
-            title="结束面试"
+            className={`w-16 h-16 md:w-20 md:h-20 rounded-full text-white shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center ${
+              hasReachedSuggestedRounds
+                ? 'bg-emerald-600 shadow-emerald-900/50 hover:bg-emerald-700'
+                : 'bg-rose-600 shadow-rose-900/50 hover:bg-rose-700'
+            }`}
+            title={hasReachedSuggestedRounds ? '结束面试并生成报告' : '结束面试'}
           >
-            <PhoneOff size={32} fill="currentColor" />
+            <PhoneOff size={28} fill="currentColor" />
           </button>
 
           <div
-            className="w-80 flex items-center gap-2 bg-slate-800 rounded-full px-4 py-2"
+            className="w-full md:w-80 flex items-center gap-2 bg-slate-800 rounded-full px-4 py-2"
             style={{ opacity: isLoading ? 0.6 : 1 }}
           >
             <input
@@ -472,12 +466,7 @@ const InterviewLiveView: React.FC<Props> = ({
         {error && (
           <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-30 bg-rose-600/90 text-white px-4 py-2 rounded-lg text-sm">
             {error}
-            <button
-              onClick={() => setError(null)}
-              className="ml-2 hover:underline"
-            >
-              关闭
-            </button>
+            <button onClick={() => setError(null)} className="ml-2 hover:underline">关闭</button>
           </div>
         )}
       </div>

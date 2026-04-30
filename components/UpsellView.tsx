@@ -122,7 +122,7 @@ const UpsellView: React.FC<Props> = ({ feedback, onRestart }) => {
                </ul>
                
                <button className="w-full bg-white text-indigo-700 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-colors flex justify-center items-center gap-2 text-sm">
-                  预约免费咨询 <ArrowRight size={16}/>
+                  即将开放，敬请期待
                </button>
             </div>
          </div>

@@ -8,10 +8,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // 2. 读取你在 Vercel 填写的变量
+  // 2. 读取环境变量
   const apiKey = process.env.SILICONFLOW_API_KEY;
   const baseUrl = process.env.SILICONFLOW_API_BASE || 'https://api.siliconflow.cn/v1';
-  // 这里就是读取你刚才在网页填写的模型 ID，如果没读到，默认用 Qwen2.5
   const modelId = process.env.OCR_MODEL_ID || 'Qwen/Qwen2.5-VL-72B-Instruct';
 
   if (!apiKey) {
@@ -19,13 +18,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { image } = req.body;
-    if (!image) return res.status(400).json({ error: '未接收到图片数据' });
+    // 3. 兼容前端两种参数格式：{ imageBase64, mimeType } 和 { image }
+    const { imageBase64, mimeType, image } = req.body;
+    const rawBase64 = imageBase64 || image;
 
-    // 处理图片格式（去掉可能存在的 base64 前缀）
-    const base64Image = image.includes('base64,') ? image : `data:image/png;base64,${image}`;
+    if (!rawBase64) {
+      return res.status(400).json({ error: '未接收到图片数据' });
+    }
 
-    // 3. 发送请求给硅基流动
+    // 处理图片格式（去掉可能存在的 base64 前缀，再根据 mimeType 重新拼接）
+    let base64Image: string;
+    if (rawBase64.includes('base64,')) {
+      base64Image = rawBase64;
+    } else if (mimeType) {
+      base64Image = `data:${mimeType};base64,${rawBase64}`;
+    } else {
+      base64Image = `data:image/png;base64,${rawBase64}`;
+    }
+
+    // 4. 发送请求给硅基流动
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -53,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error(data.error?.message || '模型接口返回错误');
     }
 
-    // 4. 验证响应结构安全后再提取文字
+    // 5. 验证响应结构安全后再提取文字
     if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
       throw new Error('API 响应缺少 choices 字段或为空');
     }
@@ -67,6 +78,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (error: any) {
     console.error('OCR 运行报错:', error.message);
-    return res.status(500).json({ error: 'OCR 识别失败', details: error.message });
+    return res.status(500).json({ error: '图片识别失败，请稍后重试', details: error.message });
   }
 }
