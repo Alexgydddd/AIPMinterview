@@ -424,7 +424,7 @@ const InterviewLiveView: React.FC<Props> = ({
         {/* Bottom Controls */}
         <div className="bg-slate-950 p-6 flex justify-center items-center gap-8 z-30">
           <button
-            onClick={() => setError('实时语音识别功能正在开发中，敬请期待')}
+            onClick={() => setError('语音输入即将上线，当前请使用文字输入')}
             className="w-14 h-14 rounded-full flex items-center justify-center transition-all bg-white/10 text-white hover:bg-white/20"
             title="实时语音识别功能开发中"
           >

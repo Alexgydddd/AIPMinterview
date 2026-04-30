@@ -97,7 +97,7 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
                </li>
                <li className="flex items-center gap-3 text-sm text-slate-600">
                   <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400">3</span>
-                  实时语音对练与复盘打分
+                  AI面试官对话与复盘打分
                </li>
             </ul>
 
