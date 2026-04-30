@@ -8,21 +8,21 @@ interface Props {
 
 const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
   return (
-    <div className="max-w-6xl mx-auto mt-12 px-6 animate-fade-in">
+    <div className="max-w-6xl mx-auto mt-6 md:mt-12 px-4 md:px-6 animate-fade-in">
       <div className="text-center mb-16">
-        <h1 className="text-5xl font-black text-slate-900 mb-6 tracking-tight">
+        <h1 className="text-3xl md:text-5xl font-black text-slate-900 mb-4 md:mb-6 tracking-tight">
           PM 求职 <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-600 to-indigo-600">AI 智能教练</span>
         </h1>
-        <p className="text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">
+        <p className="text-base md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed">
           无论你是需要深度打磨简历，还是只想进行面试冲刺，我们都能提供专业的 AI 辅助。
         </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+      <div className="grid md:grid-cols-2 gap-4 md:gap-8 max-w-5xl mx-auto">
         {/* Scenario 1: Full Process (Builder) */}
         <div 
           onClick={() => onSelectScenario(AppStep.JD_INPUT)}
-          className="group relative bg-white p-10 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 hover:shadow-2xl hover:border-violet-200 hover:-translate-y-2 transition-all cursor-pointer overflow-hidden"
+          className="group relative bg-white p-6 md:p-10 rounded-2xl md:rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 hover:shadow-2xl hover:border-violet-200 hover:-translate-y-1 md:hover:-translate-y-2 transition-all cursor-pointer overflow-hidden"
         >
           <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-violet-500 to-fuchsia-500"></div>
           <div className="absolute -right-10 -top-10 w-40 h-40 bg-violet-50 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>

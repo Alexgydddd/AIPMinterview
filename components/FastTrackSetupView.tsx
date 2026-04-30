@@ -26,7 +26,7 @@ const FastTrackSetupView: React.FC<Props> = ({ onStart, onBack }) => {
         <p className="text-slate-500 mt-2">AI 面试官需要了解你的简历和目标岗位，才能进行针对性提问。</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-8">
+      <div className="grid md:grid-cols-2 gap-4 md:gap-8">
         {/* Left: Job Context */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
            <div className="flex items-center gap-3 mb-6">

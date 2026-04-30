@@ -337,8 +337,8 @@ const InterviewLiveView: React.FC<Props> = ({
   }
 
   return (
-    <div className="max-w-4xl mx-auto mt-4 animate-fade-in px-4 h-[80vh] flex flex-col">
-      <div className="bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-400 relative flex-1 flex flex-col border-4 border-slate-800">
+    <div className="max-w-4xl mx-auto mt-2 md:mt-4 animate-fade-in px-2 md:px-4 h-[80vh] flex flex-col">
+      <div className="bg-slate-900 rounded-2xl md:rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-400 relative flex-1 flex flex-col border-2 md:border-4 border-slate-800">
         {/* Top Bar */}
         <div className="flex justify-between items-center p-6 z-20">
           <div className="flex flex-col">
@@ -422,7 +422,7 @@ const InterviewLiveView: React.FC<Props> = ({
         )}
 
         {/* Bottom Controls */}
-        <div className="bg-slate-950 p-6 flex justify-center items-center gap-8 z-30">
+        <div className="bg-slate-950 p-4 md:p-6 flex flex-col md:flex-row justify-center items-center gap-3 md:gap-8 z-30">
           <button
             onClick={() => setError('语音输入即将上线，当前请使用文字输入')}
             className="w-14 h-14 rounded-full flex items-center justify-center transition-all bg-white/10 text-white hover:bg-white/20"
@@ -440,7 +440,7 @@ const InterviewLiveView: React.FC<Props> = ({
           </button>
 
           <div
-            className="w-80 flex items-center gap-2 bg-slate-800 rounded-full px-4 py-2"
+            className="w-full md:w-80 flex items-center gap-2 bg-slate-800 rounded-full px-4 py-2"
             style={{ opacity: isLoading ? 0.6 : 1 }}
           >
             <input
