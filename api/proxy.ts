@@ -23,13 +23,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // 3. 构造转发请求（强制设置低随机性参数）
+    // 3. 构造转发请求
+    // 保留前端传入的 temperature/top_p（不同场景需要不同随机性），
+    // 仅在未传入时使用默认值；max_tokens 始终使用较大值以确保不被截断
     const body = {
       ...req.body,
-      temperature: 0.1,  // 关键变量：将随机性降到最低
-      top_p: 0.1,        // 进一步限制采样范围
-      max_tokens: 2000   // 确保分析逻辑不会因长度限制而截断
+      max_tokens: req.body.max_tokens || 4096,
     };
+
+    // 仅当前端未指定时设置默认值
+    if (body.temperature === undefined) {
+      body.temperature = 0.3;
+    }
+    if (body.top_p === undefined) {
+      body.top_p = 0.9;
+    }
+
     devLog('Forwarding request to:', `${baseUrl}/chat/completions`);
 
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -54,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (error: any) {
     devError('Proxy Runtime Crash:', error.message, error.stack);
     return res.status(500).json({ 
-      error: 'Proxy logical crash', 
+      error: '服务暂时不可用，请稍后重试', 
       details: error.message 
     });
   }
