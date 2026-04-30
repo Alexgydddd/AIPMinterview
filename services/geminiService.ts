@@ -184,7 +184,7 @@ async function createChatCompletion(params: {
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(text || `Chat proxy HTTP ${res.status}`);
+    throw new Error('网络连接异常，请检查网络后重试');
   }
   try {
     return JSON.parse(text) as ChatCompletionResponse;
@@ -399,7 +399,7 @@ ${buildJsonSchemaInstruction(schema)}
     });
 
     let text = firstChoiceContent(completion);
-    if (!text) throw new Error("No text returned from analysis");
+    if (!text) throw new Error("AI分析结果为空，请重试");
     text = cleanLLMJson(text);
 
     let parsed: JdAnalysis = safeJsonParse<JdAnalysis>(
@@ -525,7 +525,7 @@ ${JSON.stringify(RESUME_OPTIMIZATION_SCHEMA, null, 2)}
     });
 
     let text = firstChoiceContent(completion);
-    if (!text) throw new Error("No response from resume optimization");
+    if (!text) throw new Error("简历优化结果为空，请重试");
     text = cleanLLMJson(text);
 
     const result = safeJsonParse<ResumeOptimizationResult>(text, {
@@ -666,7 +666,7 @@ ${JSON.stringify(RESUME_REWRITE_SCHEMA, null, 2)}
     });
 
     let text = firstChoiceContent(completion);
-    if (!text) throw new Error("No response from resume generation");
+    if (!text) throw new Error("简历生成结果为空，请重试");
     text = cleanLLMJson(text);
 
     const result = safeJsonParse<RefinedResumeResult>(text, {
@@ -745,7 +745,7 @@ ${userQuery}
     });
 
     const text = firstChoiceContent(completion);
-    if (!text) throw new Error("No response from chat");
+    if (!text) throw new Error("对话回复为空，请重试");
     return text.trim();
   } catch (error) {
     devError("Chat feedback failed", error);
@@ -815,7 +815,7 @@ ${JSON.stringify(INTERVIEW_FEEDBACK_SCHEMA, null, 2)}
     });
 
     let text = firstChoiceContent(completion);
-    if (!text) throw new Error("No response from interview feedback");
+    if (!text) throw new Error("面试反馈生成失败，请重试");
     text = cleanLLMJson(text);
 
     const result = safeJsonParse<InterviewFeedbackResult>(text, {
