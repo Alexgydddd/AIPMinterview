@@ -224,7 +224,7 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
                     <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-slate-500 text-sm leading-relaxed opacity-80 relative group">
                         <div className="absolute top-4 right-4 text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">Old</div>
                         <h4 className="font-bold mb-2 text-slate-700">{job.role} @ {job.company}</h4>
-                        <p className="italic">（原始简历对应段落...）</p>
+                        <p className="whitespace-pre-line">{originalResumeText.slice(0, 300)}...</p>
                     </div>
                     
                     <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 text-slate-800 text-sm leading-relaxed relative">
