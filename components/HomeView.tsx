@@ -3,10 +3,11 @@ import { FileSearch, Zap, TrendingUp, UserCheck, Briefcase, ArrowRight, ShieldCh
 import { AppStep } from '../types';
 
 interface Props {
+  onResume?: () => void;
   onSelectScenario: (step: AppStep) => void;
 }
 
-const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
+const HomeView: React.FC<Props> = ({ onSelectScenario, onResume }) => {
   return (
     <div className="max-w-6xl mx-auto mt-6 md:mt-12 px-4 md:px-6 animate-fade-in">
       <div className="text-center mb-16">
@@ -18,9 +19,10 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
         </p>
       </div>
 
+      {onResume && <div className="text-center mb-8"><button onClick={onResume} className="bg-violet-50 text-violet-700 rounded-xl px-6 py-3 font-bold">继续上次练习</button></div>}
       <div className="grid md:grid-cols-2 gap-4 md:gap-8 max-w-5xl mx-auto">
         {/* Scenario 1: Full Process (Builder) */}
-        <div 
+        <div
           onClick={() => onSelectScenario(AppStep.JD_INPUT)}
           className="group relative bg-white p-6 md:p-10 rounded-2xl md:rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 hover:shadow-2xl hover:border-violet-200 hover:-translate-y-1 md:hover:-translate-y-2 transition-all cursor-pointer overflow-hidden"
         >
@@ -36,9 +38,9 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
                  适合准备初期
                </span>
             </div>
-            
+
             <h3 className="text-2xl font-black text-slate-800 mb-3">全流程深度陪跑</h3>
-            <p className="text-slate-500 mb-8 leading-relaxed h-12">
+            <p className="text-slate-500 mb-8 leading-relaxed min-h-[3rem]">
               从 JD 深度解析入手，通过 AI 诊断并重写简历，最后基于优化后的简历进行全真模拟。
             </p>
 
@@ -49,7 +51,7 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
                </li>
                <li className="flex items-center gap-3 text-sm text-slate-600">
                   <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400">2</span>
-                  简历 ATS 评分与 STAR 法则重写
+                  岗位匹配诊断与 STAR 法则重写
                </li>
                <li className="flex items-center gap-3 text-sm text-slate-600">
                   <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400">3</span>
@@ -64,9 +66,9 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
         </div>
 
         {/* Scenario 2: Fast Track (Runner) */}
-        <div 
+        <div
           onClick={() => onSelectScenario(AppStep.FAST_TRACK_SETUP)}
-          className="group relative bg-white p-10 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 hover:shadow-2xl hover:border-indigo-200 hover:-translate-y-2 transition-all cursor-pointer overflow-hidden"
+          className="group relative bg-white p-6 md:p-10 rounded-2xl md:rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 hover:shadow-2xl hover:border-indigo-200 hover:-translate-y-2 transition-all cursor-pointer overflow-hidden"
         >
           <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-cyan-500"></div>
           <div className="absolute -right-10 -top-10 w-40 h-40 bg-blue-50 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -80,10 +82,10 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
                  适合面试冲刺
                </span>
             </div>
-            
+
             <h3 className="text-2xl font-black text-slate-800 mb-3">实战模拟直通车</h3>
-            <p className="text-slate-500 mb-8 leading-relaxed h-12">
-              已有满意简历？跳过分析步骤，直接上传 JD 和简历，立即开启高压模拟面试。
+            <p className="text-slate-500 mb-8 leading-relaxed min-h-[3rem]">
+              已有满意简历？跳过分析步骤，粘贴 JD 和简历，立即开启高压模拟面试。
             </p>
 
             <ul className="space-y-4 mb-10">
@@ -93,11 +95,11 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
                </li>
                <li className="flex items-center gap-3 text-sm text-slate-600">
                   <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400">2</span>
-                  AI 面试官自动生成考察题库
+                  基于岗位和经历逐轮追问
                </li>
                <li className="flex items-center gap-3 text-sm text-slate-600">
                   <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-400">3</span>
-                  AI面试官对话与复盘打分
+                  文字回答、可选语音朗读与复盘
                </li>
             </ul>
 
@@ -107,11 +109,12 @@ const HomeView: React.FC<Props> = ({ onSelectScenario }) => {
           </div>
         </div>
       </div>
-      
+
       <div className="mt-20 flex justify-center text-slate-400 text-xs font-medium flex-col items-center gap-3">
-         <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full">
-            <ShieldCheck size={14} /> 数据安全承诺：您的简历仅用于 AI 分析，不会上传至第三方服务器
+         <div className="flex items-start gap-2 px-4 py-3 bg-slate-100 rounded-2xl max-w-3xl leading-relaxed">
+            <ShieldCheck size={14} /> 数据使用说明：分析会将岗位、简历和对话发送至配置的 AI 服务商。建议先删除电话、邮箱及涉密项目信息。
          </div>
+         <p className="text-center max-w-2xl leading-relaxed">练习资料与进度保存在当前标签页；岗位分析缓存保留 7 天。可用页面底部的按钮清除。AI 评分仅供练习参考。</p>
       </div>
     </div>
   );

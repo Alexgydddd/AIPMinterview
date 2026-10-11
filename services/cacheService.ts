@@ -2,7 +2,7 @@
  * 统一缓存服务 - cacheService.ts
  *
  * 收口 App.tsx 和 geminiService.ts 中分散的 localStorage 逻辑。
- * 使用统一的缓存前缀 jd_cache_v2_，采用 SHA-256 哈希保证极低碰撞率。
+ * 使用统一的缓存前缀 jd_cache_v3_，采用 SHA-256 哈希保证极低碰撞率。
  */
 
 import { JdAnalysis } from '../types';
@@ -12,8 +12,8 @@ import { devWarn, devLog } from '../utils/logger';
 // 常量定义
 // ============================================================
 
-const CACHE_PREFIX = 'jd_cache_v2_';
-const LAST_RECORD_KEY = 'jd_last_analysis_v2';
+const CACHE_PREFIX = 'jd_cache_v3_';
+const LAST_RECORD_KEY = 'jd_last_analysis_v3';
 const CACHE_EXPIRY_DAYS = 7;
 const CACHE_EXPIRY_MS = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
 
@@ -71,7 +71,7 @@ export async function computeJdHash(text: string): Promise<string> {
 /**
  * 计算哈希并生成完整的缓存键（带前缀）
  * @param text - 需要哈希的原始文本
- * @returns Promise<string> - 完整的缓存键，如 "jd_cache_v2_<64位哈希>"
+ * @returns Promise<string> - 完整的缓存键，如 "jd_cache_v3_<64位哈希>"
  */
 export async function getJdCacheKey(text: string): Promise<string> {
   const hash = await computeJdHash(text);
@@ -246,7 +246,7 @@ export function clearJdCaches(): void {
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key && key.startsWith(CACHE_PREFIX)) {
+    if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith('jd_cache_v2_'))) {
       keysToRemove.push(key);
     }
   }
@@ -259,7 +259,7 @@ export function clearJdCaches(): void {
  * 清除所有缓存（包括 lastAnalysisRecord）
  */
 export function clearAllCaches(): void {
-  localStorage.clear();
+  try { clearJdCaches(); localStorage.removeItem(LAST_RECORD_KEY); localStorage.removeItem('jd_last_analysis_v2'); } catch {}
   devLog('[CacheService] 已清除所有本地缓存');
 }
 
@@ -272,7 +272,7 @@ export function getCacheStats(): { count: number; oldestTimestamp: number | null
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key && key.startsWith(CACHE_PREFIX)) {
+    if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith('jd_cache_v2_'))) {
       count++;
       try {
         const entry = JSON.parse(localStorage.getItem(key)!) as JdCacheEntry;

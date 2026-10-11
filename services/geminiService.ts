@@ -6,7 +6,8 @@ import {
   RefinedResumeResponse,
   ChatMessage,
 } from "../types";
-import { computeJdHash, setCachedJdAnalysis, getCachedJdAnalysis, setLastAnalysisRecord } from "./cacheService";
+import { apiFetch } from './apiClient';
+import { parseAiResult, jdResultSchema, optimizationResultSchema, refinedResultSchema, feedbackResultSchema } from './resultValidation';
 import { devLog, devWarn, devError } from "../utils/logger";
 
 const CHAT_PROXY_PATH = "/api/proxy";
@@ -127,7 +128,7 @@ export interface ChatFeedbackRequest {
 export async function extractTextFromImage(file: FileData): Promise<OcrResult> {
   devLog('已调用 SiliconFlow 深度扫描图片');
   try {
-    const response = await fetch(OCR_PROXY_PATH, {
+    const response = await apiFetch(OCR_PROXY_PATH, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -146,11 +147,7 @@ export async function extractTextFromImage(file: FileData): Promise<OcrResult> {
   } catch (error: unknown) {
     const err = error instanceof Error ? error.message : String(error);
     devError('[OCR] Error:', err);
-    return {
-      success: false,
-      text: '',
-      length: 0
-    };
+    throw error;
   }
 }
 
@@ -172,14 +169,18 @@ async function createChatCompletion(params: {
   model: string;
   messages: { role: ChatRole; content: string }[];
   temperature?: number;
+  json?: boolean;
+  signal?: AbortSignal;
 }): Promise<ChatCompletionResponse> {
-  const res = await fetch(CHAT_PROXY_PATH, {
+  const res = await apiFetch(CHAT_PROXY_PATH, {
     method: "POST",
+    signal: params.signal,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: params.model,
       messages: params.messages,
       temperature: params.temperature,
+      ...(params.json ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
   const text = await res.text();
@@ -196,25 +197,6 @@ async function createChatCompletion(params: {
 function firstChoiceContent(data: ChatCompletionResponse): string | undefined {
   const c = data.choices?.[0]?.message?.content;
   return c ?? undefined;
-}
-
-/**
- * 安全 JSON 解析工具
- */
-function safeJsonParse<T>(text: string, defaultObj: T): T {
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const jsonStr = jsonMatch ? jsonMatch[0] : text;
-    return JSON.parse(jsonStr);
-  } catch {
-    if (typeof defaultObj === "object" && defaultObj !== null) {
-      return {
-        ...defaultObj,
-        __parseError: "AI答复无法解析为有效JSON，请重试。",
-      } as T;
-    }
-    return defaultObj;
-  }
 }
 
 /**
@@ -237,10 +219,7 @@ function buildJsonSchemaInstruction(schema: Record<string, unknown>): string {
  */
 function recursiveCleanMarkdown(obj: unknown): unknown {
   if (typeof obj === "string") {
-    let s = obj.replace(/\*\*/g, "");
-    s = s.replace(/["""]/g, "「").replace(/"/g, "「").replace(/'/g, "「");
-    s = s.replace(/「+/g, "「");
-    return s;
+    return obj.replace(/\*\*/g, "");
   }
   if (Array.isArray(obj)) {
     return obj.map(recursiveCleanMarkdown);
@@ -265,6 +244,7 @@ function recursiveCleanMarkdown(obj: unknown): unknown {
 export async function generateInterviewReply(params: {
   systemPrompt: string;
   conversation: { role: "user" | "assistant"; content: string }[];
+  signal?: AbortSignal;
 }): Promise<string> {
   const chatMessages: { role: ChatRole; content: string }[] = [
     { role: "system", content: params.systemPrompt },
@@ -286,6 +266,7 @@ export async function generateInterviewReply(params: {
     model: MODEL_SMART,
     messages: chatMessages,
     temperature: 0.35,
+    signal: params.signal,
   });
   const out = firstChoiceContent(completion)?.trim();
   if (!out) throw new Error("面试官回复为空");
@@ -296,10 +277,6 @@ export async function generateInterviewReply(params: {
 // JD 分析
 // ============================================================
 
-function combinePromptWithImage(prompt: string, _file?: FileData): string {
-  return prompt;
-}
-
 /**
  * JD 分析：强调业务困境背景 + 中国互联网高级 PM 视角
  */
@@ -308,27 +285,7 @@ export const analyzeJobDescription = async (
   jdText?: string,
   jdFile?: FileData
 ): Promise<JdAnalysis> => {
-  const jdHash = await computeJdHash(jdText || "");
-
-  // 缓存读取
-  try {
-    const cachedEntry = await getCachedJdAnalysis(jdHash);
-    if (cachedEntry) {
-      const parsed = cachedEntry.data;
-      if (parsed && parsed.skills && Array.isArray(parsed.skills) && parsed.skills.length > 0) {
-        await setLastAnalysisRecord({
-          hash: jdHash,
-          company: parsed.companyName,
-          position: "",
-          textLength: 0,
-          timestamp: Date.now(),
-        });
-        return parsed;
-      }
-    }
-  } catch (e) {
-    devWarn("[CacheService] 读取缓存失败:", e);
-  }
+  if (!jdText?.trim()) throw new Error("请先输入或提取岗位描述。");
 
   // Schema 用于约束输出
   const schema = {
@@ -361,16 +318,16 @@ export const analyzeJobDescription = async (
 
   const companyNameRule = companyName
     ? `- 若提供公司名称，请直接将"${companyName}"用作 companyName 字段，禁止任何自行推测或更改。`
-    : `- 若未提供公司名称，请智能推断：仔细阅读 JD 前两行和上下文，从产品描述、业务领域、用词风格推断。如实在无法推断，使用行业惯例如『某互联网公司』『知名科技企业』等。`;
+    : `- 若未提供公司名称，只提取 JD 明确出现的公司名，否则写「目标公司」。`;
 
   const prompt = `
-你现在是互联网大厂10年资深项目经理"亚历克斯"，请以极其简明，专业的中文分析如下JD（职位描述）。
+你现在是资深项目管理专家"亚历克斯"，请以极其简明，专业的中文分析如下JD（职位描述）。
 【定量要求】：skills 数组必须提取 5-8 个核心技能，不能少于 5 个，不能多于 8 个。
 【公司名称处理说明】：
 ${companyNameRule}
 【其他推断规则】：
 - 提取 level 时，结合职位描述中的职责范围、任职资格、工作经验要求等综合判断。
-- 严禁直接输出"未提及"。如果无法准确推断，用符合行业惯例的友好表述替代：如『核心业务岗』『资深专家岗』等。
+- 未提供的行业或产品信息标记「JD 未提供」，不能编造。业务困境和岗位目的如为推断，必须标注「推断」。
 【格式锚定】：输出 JSON 时，键名顺序须为 companyName → industry → companyProducts → level → persona → skills，不允许打乱顺序。
 【重点要求】：
 1. 输出内容为结构化专业中文，风格等同"职场闭环复盘文"。
@@ -391,63 +348,22 @@ ${buildJsonSchemaInstruction(schema)}
       messages: [
         {
           role: "system",
-          content: `你现在是互联网大厂10年资深项目经理。若收到公司名参数请直接使用，否则自行推断且输出为地道中文。所有输出必须高度专业、精炼、无废话，只输出JSON。`
+          content: `你现在是资深项目管理专家。若收到公司名参数请直接使用，否则仅依据 JD 中的证据分析，推断需明确标注。所有输出必须高度专业、精炼、无废话，只输出JSON。`
         },
-        { role: "user", content: combinePromptWithImage(prompt, jdFile) }
+        { role: "user", content: prompt }
       ],
       temperature: 0.1,
+      json: true,
     });
 
     let text = firstChoiceContent(completion);
     if (!text) throw new Error("AI分析结果为空，请重试");
     text = cleanLLMJson(text);
 
-    let parsed: JdAnalysis = safeJsonParse<JdAnalysis>(
-      text,
-      {
-        companyName: "",
-        industry: "",
-        companyProducts: [],
-        level: "Senior",
-        persona: "",
-        skills: [],
-      }
-    );
-
-    parsed = recursiveCleanMarkdown(parsed) as JdAnalysis;
-
-    // 写入缓存
-    try {
-      await setCachedJdAnalysis(
-        jdHash,
-        parsed,
-        parsed.companyName || companyName || "",
-        jdText || ""
-      );
-    } catch (e) {
-      devWarn("[CacheService] 写入缓存失败:", e);
-    }
-
-    // 保存分析记录
-    await setLastAnalysisRecord({
-      hash: jdHash,
-      company: parsed.companyName || companyName || "",
-      position: "",
-      textLength: (jdText || "").length,
-      timestamp: Date.now(),
-    });
-
-    return parsed;
+    return recursiveCleanMarkdown(parseAiResult(text, jdResultSchema)) as JdAnalysis;
   } catch (error) {
     devError("Analysis failed", error);
-    return {
-      companyName: "",
-      industry: "",
-      companyProducts: [],
-      level: "Senior",
-      persona: "",
-      skills: [],
-    } as JdAnalysis;
+    throw error;
   }
 };
 
@@ -487,8 +403,9 @@ export async function optimizeResume(
   resumeText: string,
   resumeFile?: FileData
 ): Promise<ResumeOptimizationResult> {
+  if (!resumeText.trim()) throw new Error("请先输入或提取简历文字。");
   const prompt = `
-你现在是互联网大厂资深HR，请分析简历与JD的匹配度，并给出具体的优化建议。
+你现在是资深项目管理招聘顾问，请分析简历与JD的匹配度，并给出具体的优化建议。
 
 【JD背景】
 ${jdContext}
@@ -519,29 +436,20 @@ ${JSON.stringify(RESUME_OPTIMIZATION_SCHEMA, null, 2)}
           role: "system",
           content: "你是一个专业的简历优化顾问。请严格按照JSON格式输出分析结果。"
         },
-        { role: "user", content: combinePromptWithImage(prompt, resumeFile) }
+        { role: "user", content: prompt }
       ],
       temperature: 0.3,
+      json: true,
     });
 
     let text = firstChoiceContent(completion);
     if (!text) throw new Error("简历优化结果为空，请重试");
     text = cleanLLMJson(text);
 
-    const result = safeJsonParse<ResumeOptimizationResult>(text, {
-      matchScore: 0,
-      executiveSummary: "简历分析失败",
-      improvements: [],
-    });
-
-    return recursiveCleanMarkdown(result) as ResumeOptimizationResult;
+    return recursiveCleanMarkdown(parseAiResult(text, optimizationResultSchema)) as ResumeOptimizationResult;
   } catch (error) {
     devError("Resume optimization failed", error);
-    return {
-      matchScore: 0,
-      executiveSummary: "简历优化失败，请稍后重试",
-      improvements: [],
-    };
+    throw error;
   }
 }
 
@@ -629,7 +537,7 @@ export async function generateRefinedResume(
   improvements: string
 ): Promise<RefinedResumeResult> {
   const prompt = `
-你现在是互联网大厂资深HR兼项目经理，请根据以下信息重写一份专业的简历。
+你是资深项目管理招聘顾问，请优化简历表达。只使用原始简历中的真实事实，严禁编造公司、学历、任职时间、项目成果、指标或技能。缺少的数据使用「待补充」并在优化说明中指出；未提供的联系方式留空。
 
 【JD背景】
 ${jdContext}
@@ -663,36 +571,17 @@ ${JSON.stringify(RESUME_REWRITE_SCHEMA, null, 2)}
         { role: "user", content: prompt }
       ],
       temperature: 0.2,
+      json: true,
     });
 
     let text = firstChoiceContent(completion);
     if (!text) throw new Error("简历生成结果为空，请重试");
     text = cleanLLMJson(text);
 
-    const result = safeJsonParse<RefinedResumeResult>(text, {
-      optimizationLogic: { changesMade: '', reasoning: '' },
-      resume: {
-        baseInfo: { name: '', phone: '', email: '', objective: '' },
-        summary: '',
-        workExperience: [],
-        projectExperience: [],
-        education: { degree: '', school: '', major: '', date: '' }
-      }
-    });
-
-    return recursiveCleanMarkdown(result) as RefinedResumeResult;
+    return recursiveCleanMarkdown(parseAiResult(text, refinedResultSchema)) as RefinedResumeResult;
   } catch (error) {
     devError("Resume generation failed", error);
-    return {
-      optimizationLogic: { changesMade: '生成失败', reasoning: '请稍后重试' },
-      resume: {
-        baseInfo: { name: '', phone: '', email: '', objective: '' },
-        summary: '',
-        workExperience: [],
-        projectExperience: [],
-        education: { degree: '', school: '', major: '', date: '' }
-      }
-    };
+    throw error;
   }
 }
 
@@ -749,7 +638,7 @@ ${userQuery}
     return text.trim();
   } catch (error) {
     devError("Chat feedback failed", error);
-    return "抱歉，出了点小问题，请重试。";
+    throw error;
   }
 }
 
@@ -794,8 +683,8 @@ ${interviewTranscript}
 ${JSON.stringify(INTERVIEW_FEEDBACK_SCHEMA, null, 2)}
 
 要求：
-1. score 是 0-100 的综合评分
-2. strengths 列出 2-4 个突出优点
+1. score 是 0-100 的练习参考分。只依据候选人的实际回答，不把面试官的话当作候选人的表现；对话轮次少时必须说明证据有限。
+2. strengths 列出 2-4 个有实际回答支撑的优点；不要为了凑条目编造表现。
 3. weaknesses 列出 2-4 个需要改进的地方
 4. improvementPlan 是具体的改进计划（3-5句话）
 5. growthEvaluation 是与上次相比的成长评价（如果是首次面试则为空字符串）
@@ -812,30 +701,17 @@ ${JSON.stringify(INTERVIEW_FEEDBACK_SCHEMA, null, 2)}
         { role: "user", content: prompt }
       ],
       temperature: 0.3,
+      json: true,
     });
 
     let text = firstChoiceContent(completion);
     if (!text) throw new Error("面试反馈生成失败，请重试");
     text = cleanLLMJson(text);
 
-    const result = safeJsonParse<InterviewFeedbackResult>(text, {
-      score: 0,
-      strengths: [],
-      weaknesses: [],
-      improvementPlan: "面试反馈生成失败",
-      growthEvaluation: ""
-    });
-
-    return recursiveCleanMarkdown(result) as InterviewFeedbackResult;
+    return recursiveCleanMarkdown(parseAiResult(text, feedbackResultSchema)) as InterviewFeedbackResult;
   } catch (error) {
     devError("Interview feedback failed", error);
-    return {
-      score: 0,
-      strengths: [],
-      weaknesses: [],
-      improvementPlan: "面试反馈生成失败，请稍后重试",
-      growthEvaluation: ""
-    };
+    throw error;
   }
 }
 

@@ -1,3 +1,4 @@
+import { useSessionState } from '../hooks/useSessionState';
 import React, { useState, useRef, useEffect, memo } from 'react';
 import { JdAnalysis, FileData, SkillCard } from '../types';
 import { Target, Upload, Image as ImageIcon, X, Building2, Search, ArrowRight, ChevronDown, ChevronUp, CheckCircle2, Cpu, BrainCircuit, Download, FileImage, FileText, Trash2, Clock, RotateCcw, Loader2 } from 'lucide-react';
@@ -6,65 +7,25 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { extractTextFromImage } from '../services/geminiService';
 import { getLastAnalysisRecord, LastAnalysisRecord } from '../services/cacheService';
+import ProcessingStatus from './ProcessingStatus';
+import { readUploadText, UPLOAD_ACCEPT } from '../services/uploadText';
 import { devLog, devWarn, devError } from '../utils/logger';
 
 interface Props {
   jdAnalysis: JdAnalysis | null;
   onAnalyze: (company: string, text: string, file?: FileData) => void;
   isLoading: boolean;
+  onEdit: () => void;
   onNext: () => void;
   onClearCache: () => void;
   onRestoreFromCache?: (hash: string, record: LastAnalysisRecord) => void;
 }
 
-// Progress Bar Component with Running Man
-const SimulatedProgress = () => {
-  const [progress, setProgress] = useState(0);
-  useEffect(() => {
-    // Slower, more uniform progress that slows down near the end but doesn't hard stop
-    const timer = setInterval(() => {
-      setProgress(old => {
-        if (old >= 99) return 99;
-        // Decrease increment size as we get closer to 100
-        const remaining = 100 - old;
-        const increment = Math.max(0.2, remaining * 0.05); 
-        return Math.min(old + increment, 99);
-      });
-    }, 100);
-    return () => clearInterval(timer);
-  }, []);
-
-  return (
-    <div className="w-full mt-8 relative">
-       {/* Running Man Container */}
-      <div 
-        className="absolute bottom-3 transition-all duration-100 ease-linear"
-        style={{ left: `calc(${progress}% - 24px)` }}
-      >
-        <span className="text-2xl filter drop-shadow-sm animate-bounce">🏃</span>
-      </div>
-
-      <div className="h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-        <div 
-           className="h-full bg-gradient-to-r from-violet-400 to-violet-600 transition-all duration-100 ease-linear" 
-           style={{ width: `${progress}%` }} 
-        />
-      </div>
-      <div className="flex justify-between items-center mt-3">
-         <p className="text-slate-500 text-xs font-medium tracking-wide animate-pulse">
-           {progress < 30 ? '正在连接大模型...' : progress < 60 ? '正在深度调研行业背景...' : '正在生成岗位能力模型...'}
-         </p>
-         <span className="text-violet-600 text-sm font-bold font-mono">{Math.floor(progress)}%</span>
-      </div>
-    </div>
-  );
-};
-
 // Text Formatter for Application Scenarios
 const FormattedText: React.FC<{ text: string }> = ({ text }) => {
   // Split by newlines
   const paragraphs = text.split('\n').filter(p => p.trim());
-  
+
   return (
     <div className="space-y-3">
       {paragraphs.map((p, idx) => {
@@ -91,8 +52,8 @@ export const SkillCardItem: React.FC<{ skill: SkillCard }> = memo(({ skill }) =>
   const isHigh = skill.priority === 'High';
   const isHard = skill.type === 'Hard';
 
-  const badgeColor = isHigh 
-    ? 'bg-rose-50 text-rose-600 border-rose-100' 
+  const badgeColor = isHigh
+    ? 'bg-rose-50 text-rose-600 border-rose-100'
     : 'bg-slate-100 text-slate-500 border-slate-200';
 
   const borderColor = isHigh ? 'border-rose-200' : 'border-slate-200';
@@ -117,9 +78,9 @@ export const SkillCardItem: React.FC<{ skill: SkillCard }> = memo(({ skill }) =>
        <p className="text-slate-500 text-sm mb-4 leading-relaxed line-clamp-2">
          {skill.description}
        </p>
-       
+
        {/* Expand Button */}
-       <button 
+       <button
           onClick={() => setIsOpen(!isOpen)}
           className={`w-full py-2 flex items-center justify-center gap-1 text-xs font-bold rounded-lg transition-all no-export
             ${isOpen ? 'bg-slate-100 text-slate-700' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
@@ -140,9 +101,9 @@ export const SkillCardItem: React.FC<{ skill: SkillCard }> = memo(({ skill }) =>
   );
 });
 
-const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onNext, onClearCache, onRestoreFromCache }) => {
-  const [company, setCompany] = useState('');
-  const [text, setText] = useState('');
+const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onNext, onEdit, onClearCache, onRestoreFromCache }) => {
+  const [company, setCompany] = useSessionState('jdCompany', '');
+  const [text, setText] = useSessionState('jdInput', '');
   const [file, setFile] = useState<FileData | undefined>(undefined);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -221,55 +182,16 @@ const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onN
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    setUploadError(null);
-    setOcrResult(null);
-    setOcrError(null);
-    
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      devLog('[上传] 开始处理文件:', selectedFile.name, selectedFile.type);
-      
-      try {
-        const reader = new FileReader();
-        
-        const fileData = await new Promise<FileData>((resolve, reject) => {
-          reader.onloadend = () => {
-            const base64String = (reader.result as string).split(',')[1];
-            resolve({
-              mimeType: selectedFile.type,
-              data: base64String
-            });
-          };
-          reader.onerror = () => {
-            reject(new Error("读取文件失败"));
-          };
-          reader.readAsDataURL(selectedFile);
-        });
-        
-        setFile(fileData);
-        devLog('[上传] 文件已读取，base64 长度:', fileData.data.length);
-        
-        // 自动触发 OCR 识别
-        setIsOcrProcessing(true);
-        devLog('[上传] 开始 OCR 识别...');
-        
-        const result = await extractTextFromImage(fileData);
-        
-        if (result.success && result.text.trim()) {
-          devLog('[上传] OCR 识别成功，文字长度:', result.length);
-          setOcrResult(result.text);
-          setText(result.text); // 自动填充到输入框
-        } else {
-          devWarn('[上传] OCR 识别失败或无文字内容');
-          setOcrError('未能从图片中识别出文字内容，请手动输入');
-        }
-      } catch (err) {
-        devError('[上传] 处理文件出错:', err);
-        setUploadError("Oops，上传失败，请重新上传～");
-      } finally {
-        setIsOcrProcessing(false);
-      }
-    }
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+    setUploadError(null); setOcrError(null); setIsOcrProcessing(true);
+    try {
+      const extracted = await readUploadText(selected);
+      setText(extracted); setOcrResult(extracted);
+      setFile({ mimeType: selected.type, data: '' });
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : '提取文字失败，请粘贴文字。');
+    } finally { setIsOcrProcessing(false); }
   };
 
   const clearFile = () => {
@@ -300,9 +222,9 @@ const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onN
               <Target size={28} />
             </div>
             <h2 className="text-2xl font-black text-slate-800">目标岗位定位</h2>
-            <p className="text-slate-500 mt-2 text-sm">我们会自动调研该公司的背景与行业要求</p>
+            <p className="text-slate-500 mt-2 text-sm">依据你提供的 JD 拆解能力要求，推断内容会明确标注。</p>
           </div>
-          
+
           <div className="space-y-6">
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">目标公司</label>
@@ -311,17 +233,17 @@ const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onN
                 <input
                   type="text"
                   className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all text-sm font-medium"
-                  placeholder="例如：字节跳动, Tesla, ..."
+                  maxLength={200} placeholder="例如：字节跳动, Tesla, ..."
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  disabled={isLoading}
+                  disabled={isLoading || isOcrProcessing}
                 />
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">职位描述 (JD)</label>
-              <textarea
+              <textarea maxLength={20000}
                 className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all resize-none text-sm"
                 placeholder="粘贴 JD 文本，或上传图片自动识别..."
                 value={text}
@@ -383,7 +305,7 @@ const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onN
                 </div>
               </div>
             )}
-            
+
             {/* Divider */}
             <div className="relative flex items-center justify-center">
                  <div className="absolute border-t border-slate-200 w-full"></div>
@@ -392,21 +314,21 @@ const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onN
 
             <div className="flex flex-col gap-2">
                <div className="flex items-center gap-3">
-                   <input 
-                     type="file" 
+                   <input
+                     type="file"
                      ref={fileInputRef}
                      onChange={handleFileChange}
                      className="hidden"
-                     accept="image/*,application/pdf"
+                     accept={UPLOAD_ACCEPT}
                    />
-                   <button 
+                   <button
                      onClick={() => fileInputRef.current?.click()}
                      className="flex-1 py-3 border-2 border-dashed border-slate-200 rounded-xl hover:border-violet-300 hover:bg-violet-50 text-slate-500 text-sm font-medium flex items-center justify-center gap-2 transition-all"
-                     disabled={isLoading}
+                     disabled={isLoading || isOcrProcessing}
                    >
-                     <Upload size={16} /> 上传图片/附件
+                     <Upload size={16} /> 上传 PDF / 图片
                    </button>
-                   
+
 {file && (
                      <div className="flex items-center gap-2 bg-violet-100 text-violet-700 px-4 py-3 rounded-xl text-sm font-bold">
                        <ImageIcon size={16} />
@@ -431,8 +353,8 @@ const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onN
                </div>
             ) : (
               <button
-                onClick={() => text.trim() && onAnalyze(company, text, ocrResult ? undefined : file)}
-                disabled={!text.trim() || !company.trim()}
+                onClick={() => text.trim() && onAnalyze(company, text)}
+                disabled={isLoading || isOcrProcessing || !text.trim() || !company.trim()}
                 className="w-full py-4 bg-violet-600 text-white rounded-2xl font-bold shadow-lg shadow-violet-200 hover:bg-violet-700 hover:scale-[1.02] disabled:opacity-50 disabled:scale-100 transition-all flex items-center justify-center gap-2"
               >
                   <Search size={20} /> 深度解析岗位
@@ -467,7 +389,8 @@ const JdAnalysisView: React.FC<Props> = ({ jdAnalysis, onAnalyze, isLoading, onN
         </button>
       </div>
 
-      <div ref={exportRef} className="bg-slate-50 p-4 -mx-4 sm:mx-0 sm:p-6 rounded-3xl">
+      <button onClick={onEdit} className="mb-4 text-sm text-violet-600 font-bold">修改岗位并重新分析</button>
+        <div ref={exportRef} className="bg-slate-50 p-4 -mx-4 sm:mx-0 sm:p-6 rounded-3xl">
         <ResultHeader jdAnalysis={jdAnalysis} level={getLevelLabel(jdAnalysis.level)} />
         <SkillMatrix skills={jdAnalysis.skills} />
       </div>

@@ -92,16 +92,8 @@ export function useJdAnalysis(): UseJdAnalysisReturn {
       const textTrimmed = text.trim();
       const isEmptyText = !textTrimmed;
 
-      // 计算 SHA-256 哈希
-      // 空文本使用带时间戳的占位符生成唯一哈希，避免不同空提交互相命中缓存
-      const jdHash = isEmptyText
-        ? await computeJdHash(`empty_jd_${Date.now()}_${Math.random().toString(36).slice(2)}`)
-        : await computeJdHash(textTrimmed);
-      devLog(`[useJdAnalysis] 生成指纹: ${jdHash}`);
-
-      if (isEmptyText) {
-        devWarn('[useJdAnalysis] JD 文本为空，将使用占位符');
-      }
+      if (isEmptyText) throw new Error('请先输入或提取岗位描述。');
+      const jdHash = await computeJdHash(JSON.stringify([company.trim(), textTrimmed]));
 
       // 尝试从缓存读取
       const cachedResult = await getCachedJdAnalysis(jdHash);
@@ -142,7 +134,7 @@ export function useJdAnalysis(): UseJdAnalysisReturn {
 
     } catch (e) {
       devError('[useJdAnalysis] 分析失败:', e);
-      setError('JD 解析失败，请重试。');
+      setError(e instanceof Error ? e.message : 'JD 解析失败，请重试。');
       return null;
     } finally {
       setIsProcessing(false);

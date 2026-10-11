@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { RefinedResumeResponse, ResumeOptimization } from '../types';
 import { generateRefinedResume } from '../services/geminiService';
 import { FileText, Download, ArrowRight, Sparkles, Loader2, Info, ArrowLeftRight, Check, XCircle } from 'lucide-react';
 import * as docx from "docx";
 import saveAs from "file-saver";
+import { useSessionState } from '../hooks/useSessionState';
 import { devError } from '../utils/logger';
 
 function refinedResumeToPlainText(r: RefinedResumeResponse): string {
@@ -41,30 +42,36 @@ interface Props {
 }
 
 const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, improvements, onNext }) => {
-  const [refinedResumeResponse, setRefinedResumeResponse] = useState<RefinedResumeResponse | null>(null);
+  const [refinedResumeResponse, setRefinedResumeResponse] = useSessionState<RefinedResumeResponse | null>('rewritten', null);
   const [isGenerating, setIsGenerating] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const generationRef = useRef<Promise<RefinedResumeResponse> | null>(null);
   const [viewMode, setViewMode] = useState<'compare' | 'preview'>('compare'); // 'compare' vs 'preview'
 
   useEffect(() => {
+    let active = true;
     const generate = async () => {
       try {
-        setIsGenerating(true);
+        setIsGenerating(true); setError(null);
         const improvementsStr = improvements.map(i => `Original: ${i.original}\nImprovement: ${i.suggestion}`).join('\n');
-        const result = await generateRefinedResume(jdContext, originalResumeText, improvementsStr);
-        setRefinedResumeResponse(result);
+        generationRef.current ??= generateRefinedResume(jdContext, originalResumeText, improvementsStr);
+        const result = await generationRef.current;
+        if (active) setRefinedResumeResponse(result);
       } catch (e) {
         devError(e);
-        setError("生成优化简历失败，请稍后重试。");
+        if (active) setError(e instanceof Error ? e.message : "生成优化简历失败，请稍后重试。");
+        generationRef.current = null;
       } finally {
-        setIsGenerating(false);
+        if (active) setIsGenerating(false);
       }
     };
 
     if (!refinedResumeResponse) {
         generate();
-    }
-  }, [jdContext, originalResumeText, improvements]);
+    } else { setIsGenerating(false); }
+    return () => { active = false; };
+  }, [jdContext, originalResumeText, improvements, retry]);
 
   const downloadDocx = () => {
     if (!refinedResumeResponse) return;
@@ -96,7 +103,7 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
         ],
         spacing: { after: 60 }
     });
-    
+
     const doc = new docx.Document({
         sections: [{
             properties: {},
@@ -122,7 +129,7 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
                 createHeading("工作经历"),
                 ...resume.workExperience.flatMap(job => [
                     createEntryHeader(`${job.role} | ${job.company}`, job.date),
-                    ...job.points.map(pt => 
+                    ...job.points.map(pt =>
                          new docx.Paragraph({
                             text: `• ${pt}`,
                             spacing: { after: 40 }
@@ -160,10 +167,10 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
                     <Sparkles className="text-violet-600 animate-pulse" size={48} />
                   </div>
               </div>
-              <h2 className="text-3xl font-black text-slate-800 mb-4 tracking-tight">正在重铸您的职业故事...</h2>
+              <h2 className="text-3xl font-black text-slate-800 mb-4 tracking-tight">正在优化真实项目经历的表达…</h2>
               <div className="flex flex-col gap-2 text-slate-500 max-w-md mx-auto text-sm font-medium">
                 <p className="flex items-center gap-2 justify-center"><Check size={14} className="text-emerald-500"/> 正在植入 JD 核心关键词</p>
-                <p className="flex items-center gap-2 justify-center"><Check size={14} className="text-emerald-500"/> 正在量化项目产出数据</p>
+                <p className="flex items-center gap-2 justify-center"><Check size={14} className="text-emerald-500"/> 正在整理已有项目成果</p>
                 <p className="flex items-center gap-2 justify-center"><Check size={14} className="text-emerald-500"/> 正在重构 STAR 叙事逻辑</p>
               </div>
           </div>
@@ -173,7 +180,8 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
   if (error || !refinedResumeResponse) {
       return (
         <div className="max-w-2xl mx-auto mt-16 text-center p-8 bg-rose-50 rounded-2xl border border-rose-100 text-rose-800">
-             <p>{error || "未知错误"}</p>
+             <p role="alert">{error || "未生成有效内容，请重试。"}</p>
+             <button onClick={() => setRetry(v => v + 1)} className="mt-4 px-6 py-3 bg-violet-600 text-white rounded-xl font-bold">重新生成简历</button>
         </div>
       );
   }
@@ -182,26 +190,27 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
 
   return (
     <div className="max-w-6xl mx-auto mt-8 px-6 pb-20 animate-fade-in">
-        
+
+        <p className="mb-4 p-3 bg-amber-50 text-amber-800 text-sm rounded-xl">请核对所有事实和「待补充」内容，再导出或用于投递。优化应保留你的真实经历。</p>
         {/* Logic Header */}
         <div className="bg-gradient-to-r from-indigo-600 to-violet-700 rounded-[2rem] p-8 mb-8 text-white shadow-2xl shadow-indigo-200 relative overflow-hidden">
              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
              <div className="relative z-10">
                  <div className="flex items-center gap-3 mb-4">
                     <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm"><Sparkles size={20} className="text-yellow-300"/></div>
-                    <h2 className="text-2xl font-black tracking-tight">简历升级完成</h2>
+                    <h2 className="text-2xl font-black tracking-tight">简历优化草稿</h2>
                  </div>
                  <p className="text-indigo-100 text-lg font-medium leading-relaxed max-w-3xl">
                     {optimizationLogic.changesMade}
                  </p>
                  <div className="mt-6 flex gap-4">
-                    <button 
+                    <button
                       onClick={() => setViewMode('compare')}
                       className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${viewMode === 'compare' ? 'bg-white text-indigo-700 shadow-lg' : 'bg-indigo-800/50 text-indigo-200 hover:bg-indigo-800'}`}
                     >
                       <ArrowLeftRight size={16}/> 前后对比 (Compare)
                     </button>
-                    <button 
+                    <button
                       onClick={() => setViewMode('preview')}
                       className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${viewMode === 'preview' ? 'bg-white text-indigo-700 shadow-lg' : 'bg-indigo-800/50 text-indigo-200 hover:bg-indigo-800'}`}
                     >
@@ -217,7 +226,7 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
                   <span>Before (原始描述)</span>
                   <span>After (AI 赋能)</span>
               </div>
-              
+
               {/* Highlight 1: Experience Transformation */}
               {resume.workExperience.slice(0, 2).map((job, i) => (
                  <div key={i} className="grid md:grid-cols-2 gap-0 md:gap-8 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all">
@@ -226,7 +235,7 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
                         <h4 className="font-bold mb-2 text-slate-700">{job.role} @ {job.company}</h4>
                         <p className="whitespace-pre-line">{originalResumeText.slice(0, 300)}...</p>
                     </div>
-                    
+
                     <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 text-slate-800 text-sm leading-relaxed relative">
                         <div className="absolute top-4 right-4 text-xs font-bold text-emerald-600 bg-white px-2 py-1 rounded border border-emerald-100 flex items-center gap-1">
                            <Sparkles size={10} /> Optimized
@@ -258,7 +267,7 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
                         <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><FileText size={20}/></div>
                         <h2 className="text-xl font-bold text-slate-800">简历预览模式</h2>
                     </div>
-                    <button 
+                    <button
                         onClick={downloadDocx}
                         className="px-6 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all flex items-center gap-2 shadow-lg shadow-slate-200"
                     >
@@ -337,13 +346,13 @@ const ResumeRewriteView: React.FC<Props> = ({ jdContext, originalResumeText, imp
         )}
 
         <div className="mt-10 flex justify-center">
-             <button 
+             <button
                 onClick={() => refinedResumeResponse && onNext(refinedResumeToPlainText(refinedResumeResponse))}
                 className="group px-10 py-5 bg-slate-900 text-white rounded-full font-bold shadow-2xl shadow-slate-400 hover:scale-105 hover:bg-slate-800 transition-all flex items-center gap-3 text-lg"
              >
                 <div className="relative">
                     <span className="absolute -inset-1 rounded-full bg-white/20 animate-pulse"></span>
-                    <Sparkles size={20} className="relative z-10 text-yellow-300"/> 
+                    <Sparkles size={20} className="relative z-10 text-yellow-300"/>
                 </div>
                 带着这份简历，开始模拟面试 <ArrowRight size={20} />
              </button>

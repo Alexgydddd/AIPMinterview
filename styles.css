@@ -1,8 +1,3 @@
-/**
- * 全局样式（与 index.html 中 Tailwind CDN 配合）
- * 置于 public/ 以便开发与构建时均以 /index.css 提供
- */
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -70,3 +65,5 @@
   animation: audioWave5 0.6s ease-in-out infinite alternate !important;
   animation-delay: 0.25s !important;
 }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

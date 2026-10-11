@@ -1,10 +1,12 @@
-import React, { useState, useRef, lazy, Suspense, useEffect } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
+import { useSessionState, clearSessionDraft } from './hooks/useSessionState';
+import { downloadText } from './utils/download';
+import type { InterviewMessage } from './utils/interview';
 import StepIndicator from './components/StepIndicator';
 import HomeView from './components/HomeView';
 import { AppStep, JdAnalysis, ResumeOptimization, FileData, InterviewFeedback } from './types';
 import { optimizeResume, generateInterviewFeedback } from './services/geminiService';
 import {
-  getLastAnalysisRecord as getCacheLastRecord,
   clearAllCaches,
   LastAnalysisRecord,
 } from './services/cacheService';
@@ -40,130 +42,50 @@ const StepSuspense: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 );
 
 // ============================================================
-// 上次分析提示组件
-// ============================================================
-
-interface LastAnalysisPromptProps {
-  lastAnalysis: React.MutableRefObject<LastAnalysisRecord | null>;
-  onRestore: (hash: string, record: LastAnalysisRecord) => void;
-  onReanalyze: () => void;
-}
-
-const LastAnalysisPrompt: React.FC<LastAnalysisPromptProps> = React.memo(({
-  lastAnalysis,
-  onRestore,
-  onReanalyze,
-}) => {
-  if (
-    !lastAnalysis.current ||
-    !lastAnalysis.current.company ||
-    !lastAnalysis.current.hash ||
-    !lastAnalysis.current.position
-  ) {
-    return null;
-  }
-
-  const position = lastAnalysis.current.position;
-  return (
-    <div
-      className="max-w-xl mx-auto mb-6 px-5 py-3 bg-yellow-50 border border-yellow-200 rounded-2xl text-yellow-800 shadow-sm flex items-center justify-between gap-3"
-      style={{ animation: 'fadeIn 450ms' }}
-    >
-      <div>
-        <span className="font-medium text-sm">
-          检测到您上次分析过 <b>{lastAnalysis.current.company}</b> 的岗位：
-        </span>
-        <span className="text-xs text-yellow-700 ml-2">
-          {position.length > 36 ? position.slice(0, 32) + '...' : position}
-        </span>
-      </div>
-      <div className="flex gap-2">
-        <button
-          className="text-xs px-2 py-1 bg-yellow-100 border border-yellow-300 rounded hover:bg-yellow-200 transition"
-          onClick={() => onRestore(lastAnalysis.current!.hash, lastAnalysis.current!)}
-        >
-          直接查看
-        </button>
-        <button
-          className="text-xs px-2 py-1 bg-white border border-yellow-300 rounded hover:bg-yellow-100 transition"
-          onClick={onReanalyze}
-        >
-          重新分析
-        </button>
-      </div>
-    </div>
-  );
-});
-
-LastAnalysisPrompt.displayName = 'LastAnalysisPrompt';
-
-// ============================================================
 // 主应用组件
 // ============================================================
 
 const App: React.FC = () => {
   // 流程状态
-  const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.HOME);
-  const [isFastTrack, setIsFastTrack] = useState(false);
-
-  // 视图重载 Key
-  const [jdInputViewKey, setJdInputViewKey] = useState(0);
+  const [currentStep, setCurrentStep] = useSessionState<AppStep>('step', AppStep.HOME);
+  const [isFastTrack, setIsFastTrack] = useSessionState('fastTrack', false);
 
   // 数据状态
-  const [companyName, setCompanyName] = useState<string>('');
-  const [jdText, setJdText] = useState<string>('');
-  const [resumeText, setResumeText] = useState<string>('');
-  const [refinedResumeText, setRefinedResumeText] = useState<string>('');
+  const [companyName, setCompanyName] = useSessionState<string>('company', '');
+  const [jdText, setJdText] = useSessionState<string>('jd', '');
+  const [resumeText, setResumeText] = useSessionState<string>('resume', '');
+  const [refinedResumeText, setRefinedResumeText] = useSessionState<string>('refined', '');
 
-  const [jdAnalysis, setJdAnalysis] = useState<JdAnalysis | null>(null);
-  const [resumeOpt, setResumeOpt] = useState<ResumeOptimization | null>(null);
-  const [interviewHistory, setInterviewHistory] = useState<InterviewFeedback | null>(null);
+  const [jdAnalysis, setJdAnalysis] = useSessionState<JdAnalysis | null>('jdResult', null);
+  const [resumeOpt, setResumeOpt] = useSessionState<ResumeOptimization | null>('resumeResult', null);
+  const [interviewHistory, setInterviewHistory] = useSessionState<InterviewFeedback | null>('feedback', null);
+
+  const [interviewDraft, setInterviewDraft] = useSessionState<InterviewMessage[]>('interview', []);
+  const [lastTranscript, setLastTranscript] = useSessionState<string>('transcript', '');
+  const [previousFeedback, setPreviousFeedback] = useSessionState<InterviewFeedback | null>('previousFeedback', null);
+  const [savedStep, setSavedStep] = useSessionState<AppStep>('savedStep', AppStep.HOME);
 
   // 处理状态
   const [isProcessing, setIsProcessing] = useState(false);
 
   // UI 状态
   const [error, setError] = useState<string | null>(null);
-  const [showLastPrompt, setShowLastPrompt] = useState(true);
-  const [hideLastPromptKey, setHideLastPromptKey] = useState(0);
 
   // 分析 Hook
-  const { analyze: analyzeJd, restoreFromCache, clearError } = useJdAnalysis();
-
-  // 上次分析数据 Ref
-  const lastAnalysis = useRef<LastAnalysisRecord | null>(null);
-
-  // 初始化：加载上次分析记录
-  useEffect(() => {
-    const initLastAnalysis = async () => {
-      lastAnalysis.current = await getCacheLastRecord();
-    };
-    initLastAnalysis();
-  }, []);
+  const { analyze: analyzeJd, restoreFromCache, error: jdError, isProcessing: isJdProcessing, clearError } = useJdAnalysis();
 
   // ============================================================
   // 导航处理
   // ============================================================
 
   const handleBackToHome = async () => {
-    setCompanyName('');
-    setJdText('');
-    setResumeText('');
-    setRefinedResumeText('');
-    setJdAnalysis(null);
-    setResumeOpt(null);
-    setInterviewHistory(null);
-    setIsFastTrack(false);
+    setSavedStep(currentStep);
     setError(null);
-    setJdInputViewKey(k => k + 1);
-
-    setShowLastPrompt(true);
-    lastAnalysis.current = await getCacheLastRecord();
-    setHideLastPromptKey(k => k + 1);
     setCurrentStep(AppStep.HOME);
   };
 
   const navigateTo = async (step: AppStep) => {
+    if (isProcessing || isJdProcessing) return;
     if (step === AppStep.HOME) {
       handleBackToHome();
       return;
@@ -176,13 +98,8 @@ const App: React.FC = () => {
     }
 
     setCurrentStep(step);
-    setError(null);
+    setError(null); clearError();
 
-    if (step === AppStep.JD_INPUT) {
-      setShowLastPrompt(true);
-      lastAnalysis.current = await getCacheLastRecord();
-      setHideLastPromptKey(k => k + 1);
-    }
   };
 
   // ============================================================
@@ -193,17 +110,12 @@ const App: React.FC = () => {
     const result = await analyzeJd(company, text, file);
 
     if (result) {
+      setResumeOpt(null); setResumeText(""); setRefinedResumeText("");
+      setInterviewHistory(null); setPreviousFeedback(null); setInterviewDraft([]); setLastTranscript("");
+      try { sessionStorage.removeItem("aipm_draft_rewritten"); } catch {}
       setCompanyName(company);
       setJdText(text.trim() || "（详见上传的JD附件）");
       setJdAnalysis(result);
-
-      lastAnalysis.current = {
-        hash: '',
-        company,
-        position: text.trim() || "（详见上传的JD附件）",
-        textLength: text.length,
-        timestamp: Date.now(),
-      };
 
       setCurrentStep(AppStep.JD_ANALYSIS);
     }
@@ -217,15 +129,19 @@ const App: React.FC = () => {
     const result = await restoreFromCache(hash, record);
 
     if (result) {
+      setResumeOpt(null); setResumeText(""); setRefinedResumeText("");
+      setInterviewHistory(null); setPreviousFeedback(null); setInterviewDraft([]); setLastTranscript("");
+      try { sessionStorage.removeItem("aipm_draft_rewritten"); } catch {}
       setCompanyName(record.company);
       setJdText(record.position || "（详见缓存）");
       setJdAnalysis(result);
-      lastAnalysis.current = { ...record };
       setCurrentStep(AppStep.JD_ANALYSIS);
     } else {
       setCompanyName(record.company);
       setJdText(record.position || "");
-      setCurrentStep(AppStep.JD_ANALYSIS);
+      setJdAnalysis(null);
+      setError("缓存已过期，请重新分析岗位。");
+      setCurrentStep(AppStep.JD_INPUT);
     }
   };
 
@@ -237,7 +153,8 @@ const App: React.FC = () => {
     setIsProcessing(true);
     setError(null);
     try {
-      const contentText = text || "（详见上传的简历附件）";
+      const contentText = text.trim();
+      if (!contentText) throw new Error("请先输入或提取简历文字。");
 
       const context = `
       Target Company: ${companyName}
@@ -249,10 +166,12 @@ const App: React.FC = () => {
       const result = await optimizeResume(context, contentText, file);
       setResumeText(contentText);
       setResumeOpt(result);
+      setRefinedResumeText(""); setInterviewDraft([]);
+      try { sessionStorage.removeItem("aipm_draft_rewritten"); } catch {}
       setCurrentStep(AppStep.RESUME_OPTIMIZATION);
     } catch (e) {
       devError(e);
-      setError("简历优化失败，请重试。");
+      setError(e instanceof Error ? e.message : "简历优化失败，请重试。");
     } finally {
       setIsProcessing(false);
     }
@@ -263,6 +182,7 @@ const App: React.FC = () => {
   // ============================================================
 
   const handleFastTrackStart = (company: string, jd: string, resume: string) => {
+    setInterviewDraft([]); setInterviewHistory(null); setPreviousFeedback(null);
     setCompanyName(company);
     setJdText(jd);
     setResumeText(resume);
@@ -284,17 +204,19 @@ const App: React.FC = () => {
   // ============================================================
 
   const finishInterview = async (transcript: string) => {
+    setLastTranscript(transcript); setError(null); setInterviewHistory(null);
     setIsProcessing(true);
     setCurrentStep(AppStep.INTERVIEW_FEEDBACK);
 
     try {
-      let summaryContext = `Candidate applied for ${companyName}.`;
+      let summaryContext = `目标公司：${companyName}。
+目标岗位 JD：${jdText}`;
 
       if (isFastTrack) {
         summaryContext += `Mode: Fast Track (Raw Resume).`;
       } else {
         const critiques = (resumeOpt?.improvements ?? []).map((s) => s.critique).join('; ');
-        summaryContext += `Mode: Full Prep (Optimized Resume). 
+        summaryContext += `Mode: Full Prep (Optimized Resume).
            Identified Weaknesses in original resume: ${critiques || '（无）'}.`;
       }
 
@@ -303,26 +225,21 @@ const App: React.FC = () => {
         ${transcript}
         `;
 
-      const feedback = await generateInterviewFeedback(summaryContext, interviewHistory);
+      const feedback = await generateInterviewFeedback(summaryContext, previousFeedback);
       setInterviewHistory(feedback);
 
     } catch (e) {
       devError(e);
-      setError('面试报告生成失败，请检查网络后重试。');
-      setInterviewHistory({
-        score: 0,
-        strengths: [],
-        weaknesses: [],
-        improvementPlan:
-          '本次未能生成评估报告。请检查网络与 API 配置后，点击「再练一次」重试。',
-      });
+      setError(e instanceof Error ? e.message : '面试报告生成失败，请重试。');
+
     } finally {
       setIsProcessing(false);
-      setCurrentStep(AppStep.UPSELL);
+      setCurrentStep(AppStep.INTERVIEW_FEEDBACK);
     }
   };
 
   const restartWithMemory = () => {
+    setPreviousFeedback(interviewHistory); setInterviewDraft([]); setError(null);
     setCurrentStep(AppStep.MOCK_INTERVIEW);
   };
 
@@ -332,26 +249,6 @@ const App: React.FC = () => {
 
   const handleClearCache = () => {
     clearAllCaches();
-    lastAnalysis.current = null;
-    setShowLastPrompt(false);
-    setHideLastPromptKey(k => k + 1);
-  };
-
-  // ============================================================
-  // 重新分析处理
-  // ============================================================
-
-  const handleReanalyzeFromPrompt = () => {
-    setCompanyName('');
-    setJdText('');
-    setJdAnalysis(null);
-    setResumeOpt(null);
-    setResumeText('');
-    setRefinedResumeText('');
-    setInterviewHistory(null);
-    setError(null);
-    setShowLastPrompt(false);
-    setHideLastPromptKey(k => k + 1);
   };
 
   // ============================================================
@@ -362,19 +259,19 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col selection:bg-violet-200">
-      <StepIndicator currentStep={currentStep} onNavigate={navigateTo} isFastTrack={isFastTrack} />
+      <StepIndicator disabled={isProcessing || isJdProcessing} currentStep={currentStep} onNavigate={navigateTo} isFastTrack={isFastTrack} />
 
       <main className="container mx-auto pt-6 flex-1 pb-16">
-        {error && (
+        {(error || jdError) && (
           <div className="max-w-xl mx-auto mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 flex items-center justify-between shadow-sm">
-            <span className="text-sm font-medium">{error}</span>
-            <button onClick={() => setError(null)} className="text-xs font-bold hover:underline">关闭</button>
+            <span className="text-sm font-medium">{error || jdError}</span>
+            <button onClick={() => { setError(null); clearError(); }} className="text-xs font-bold hover:underline">关闭</button>
           </div>
         )}
 
         {/* Phase 0: Home */}
         {currentStep === AppStep.HOME && (
-          <HomeView onSelectScenario={navigateTo} />
+          <HomeView onSelectScenario={navigateTo} onResume={savedStep !== AppStep.HOME ? () => setCurrentStep(savedStep) : undefined} />
         )}
 
         {/* Fast Track Flow */}
@@ -391,20 +288,11 @@ const App: React.FC = () => {
         {(currentStep === AppStep.JD_INPUT || currentStep === AppStep.JD_ANALYSIS) && (
           <StepSuspense>
             <>
-              {currentStep === AppStep.JD_INPUT && (
-                <span key={hideLastPromptKey}>
-                  <LastAnalysisPrompt
-                    lastAnalysis={lastAnalysis}
-                    onRestore={handleRestoreFromCache}
-                    onReanalyze={handleReanalyzeFromPrompt}
-                  />
-                </span>
-              )}
               <JdAnalysisView
-                key={`jd-input-${jdInputViewKey}`}
                 jdAnalysis={jdAnalysis}
                 onAnalyze={handleJdAnalysis}
-                isLoading={isProcessing}
+                onEdit={() => { setJdAnalysis(null); setCurrentStep(AppStep.JD_INPUT); }}
+                isLoading={isProcessing || isJdProcessing}
                 onNext={() => setCurrentStep(AppStep.RESUME_INPUT)}
                 onClearCache={handleClearCache}
                 onRestoreFromCache={handleRestoreFromCache}
@@ -446,7 +334,9 @@ const App: React.FC = () => {
               companyName={companyName}
               jdText={jdText}
               resumeText={resumeForInterview}
-              previousFeedback={interviewHistory}
+              previousFeedback={previousFeedback}
+              draft={interviewDraft}
+              onDraftChange={setInterviewDraft}
               onFinish={finishInterview}
               onBack={() => {
                 if (isFastTrack) setCurrentStep(AppStep.FAST_TRACK_SETUP);
@@ -465,7 +355,14 @@ const App: React.FC = () => {
             </div>
           ) : (
             <StepSuspense>
-              <UpsellView feedback={interviewHistory} onRestart={restartWithMemory} />
+              {interviewHistory ? <UpsellView feedback={interviewHistory} transcript={lastTranscript} onRestart={restartWithMemory} /> : (
+                <div className="max-w-xl mx-auto p-8 text-center bg-white rounded-2xl border border-slate-200">
+                  <h2 className="text-xl font-bold mb-3">报告暂未生成</h2>
+                  <p className="text-sm text-slate-500 mb-6">{error || '可以继续生成报告，已保存本次对话。'}</p>
+                  <button onClick={() => void finishInterview(lastTranscript)} disabled={!lastTranscript} className="bg-violet-600 text-white rounded-xl px-6 py-3 font-bold disabled:opacity-40">重新生成本次报告</button>
+                  <button onClick={() => downloadText('模拟面试对话.txt', lastTranscript)} className="block mx-auto mt-4 text-sm text-violet-600">下载本次对话</button>
+                </div>
+              )}
             </StepSuspense>
           )
         )}
@@ -473,6 +370,9 @@ const App: React.FC = () => {
 
       {/* Global Footer */}
       <footer className="py-6 text-center text-slate-400 text-xs border-t border-slate-100 bg-white/50 backdrop-blur-sm">
+        <button onClick={() => {
+          clearAllCaches(); clearSessionDraft(); window.location.reload();
+        }} className="mb-3 text-slate-500 underline">清除本机练习资料并重新开始</button>
         <p>
           如果有更多的体验建议，欢迎邮件给我{' '}
           <a href="mailto:alexgyd@163.com" className="text-indigo-500 hover:underline">
