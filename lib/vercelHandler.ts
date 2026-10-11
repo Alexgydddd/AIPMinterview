@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleApi } from './apiRuntime';
+import { handleApi } from './apiRuntime.js';
 export function createApiHandler(path: string) {
   return async (req: VercelRequest, res: VercelResponse) => {
     const code = req.headers['x-beta-access-code'];

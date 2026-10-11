@@ -7,14 +7,14 @@ import {
   DEFAULT_MINIMAX_TTS_PAYLOAD,
   MINIMAX_T2A_DEFAULT_BASE,
   type MinimaxTtsClientOverrides,
-} from "./minimaxTtsPreset";
+} from "./minimaxTtsPreset.js";
 
 export {
   DEFAULT_MINIMAX_TTS_PAYLOAD,
   DEFAULT_PM_VOICE_SETTING,
   MINIMAX_T2A_DEFAULT_BASE,
   type MinimaxTtsClientOverrides,
-} from "./minimaxTtsPreset";
+} from "./minimaxTtsPreset.js";
 
 type MinimaxTtsResponse = {
   data?: { audio?: string; status?: number } | null;

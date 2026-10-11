@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { proxyChatCompletion, resolveProxySecretsForServer, sanitizeChatCompletionBody } from './proxyChatCompletion';
-import { fetchMinimaxTtsMp3, parseTtsClientBody, resolveMinimaxSecrets } from './minimaxTtsForward';
+import { proxyChatCompletion, resolveProxySecretsForServer, sanitizeChatCompletionBody } from './proxyChatCompletion.js';
+import { fetchMinimaxTtsMp3, parseTtsClientBody, resolveMinimaxSecrets } from './minimaxTtsForward.js';
 export type ServerEnv = Record<string, string | undefined>;
 export type ApiResult = { status: number; body: string | Buffer; contentType?: string };
 const json = (status: number, data: unknown): ApiResult => ({ status, body: JSON.stringify(data) });

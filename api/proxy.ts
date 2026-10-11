@@ -1,2 +1,2 @@
-import { createApiHandler } from '../lib/vercelHandler';
+import { createApiHandler } from '../lib/vercelHandler.js';
 export default createApiHandler('/api/proxy');
