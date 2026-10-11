@@ -3,15 +3,16 @@ import { AppStep } from '../types';
 import { FileSearch, FileText, UserCheck, PieChart, Home, PenTool, Zap } from 'lucide-react';
 
 interface StepIndicatorProps {
+  disabled?: boolean;
   currentStep: AppStep;
   onNavigate: (step: AppStep) => void;
   isFastTrack: boolean;
 }
 
-const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onNavigate, isFastTrack }) => {
+const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onNavigate, isFastTrack, disabled = false }) => {
   if (currentStep === AppStep.HOME) return null;
 
-  const steps = isFastTrack 
+  const steps = isFastTrack
     ? [
         { id: AppStep.FAST_TRACK_SETUP, target: AppStep.FAST_TRACK_SETUP, label: '面试配置', icon: Zap },
         { id: AppStep.MOCK_INTERVIEW, target: AppStep.MOCK_INTERVIEW, label: '实战模拟', icon: UserCheck },
@@ -26,7 +27,7 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onNavigate, 
       ];
 
   let activeIndex = 0;
-  
+
   if (isFastTrack) {
     if (currentStep === AppStep.FAST_TRACK_SETUP) activeIndex = 0;
     else if (currentStep === AppStep.MOCK_INTERVIEW) activeIndex = 1;
@@ -44,6 +45,7 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onNavigate, 
       <div className="max-w-5xl mx-auto flex items-center gap-2 md:gap-4">
         {/* Home Button */}
         <button
+          disabled={disabled}
           onClick={() => onNavigate(AppStep.HOME)}
           className="p-2 md:p-3 rounded-2xl bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-indigo-600 transition-all mr-2 md:mr-4 flex-shrink-0"
           title="返回首页"
@@ -56,21 +58,21 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onNavigate, 
             const Icon = step.icon;
             const isActive = index === activeIndex;
             const isCompleted = index < activeIndex;
-            const isClickable = index <= activeIndex;
+            const isClickable = !disabled && index < activeIndex;
 
             return (
               <React.Fragment key={step.id}>
-                <button 
+                <button
                   onClick={() => isClickable && onNavigate(step.target)}
                   disabled={!isClickable}
                   className={`flex flex-col items-center group transition-all duration-300 ${isClickable ? 'cursor-pointer' : 'cursor-default opacity-50'}`}
                 >
-                  <div 
+                  <div
                     className={`w-9 h-9 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center transition-all duration-300
-                      ${isActive 
-                        ? 'bg-violet-600 text-white shadow-lg shadow-violet-200 scale-110 md:rotate-3' 
-                        : isCompleted 
-                          ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' 
+                      ${isActive
+                        ? 'bg-violet-600 text-white shadow-lg shadow-violet-200 scale-110 md:rotate-3'
+                        : isCompleted
+                          ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                           : 'bg-white border border-slate-100 text-slate-300'}`}
                   >
                     <Icon size={16} className="md:w-5 md:h-5" />
@@ -81,7 +83,7 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, onNavigate, 
                 </button>
                 {index < steps.length - 1 && (
                   <div className="flex-1 h-[2px] mx-1 md:mx-4 bg-slate-100 relative rounded-full overflow-hidden">
-                    <div 
+                    <div
                         className="absolute top-0 left-0 h-full bg-violet-600 transition-all duration-500 ease-out"
                         style={{ width: isCompleted ? '100%' : '0%' }}
                     />

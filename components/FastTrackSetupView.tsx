@@ -1,3 +1,4 @@
+import { useSessionState } from '../hooks/useSessionState';
 import React, { useState } from 'react';
 import { Target, Upload, Play, Building2, FileText, X } from 'lucide-react';
 
@@ -7,17 +8,17 @@ interface Props {
 }
 
 const FastTrackSetupView: React.FC<Props> = ({ onStart, onBack }) => {
-  const [companyName, setCompanyName] = useState('');
-  const [jdText, setJdText] = useState('');
-  const [resumeText, setResumeText] = useState('');
-  
+  const [companyName, setCompanyName] = useSessionState('fastCompany', '');
+  const [jdText, setJdText] = useSessionState('fastJd', '');
+  const [resumeText, setResumeText] = useSessionState('fastResume', '');
+
   const isReady = companyName.trim() && jdText.trim() && resumeText.trim();
 
   return (
     <div className="max-w-4xl mx-auto mt-8 animate-fade-in px-6 pb-20">
       <div className="mb-8">
-        <button 
-          onClick={onBack} 
+        <button
+          onClick={onBack}
           className="text-slate-400 text-sm hover:text-slate-600 font-medium mb-4"
         >
           ← 返回首页
@@ -35,11 +36,11 @@ const FastTrackSetupView: React.FC<Props> = ({ onStart, onBack }) => {
               </div>
               <h3 className="font-bold text-slate-800">目标岗位信息</h3>
            </div>
-           
+
            <div className="space-y-4">
               <div>
                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">公司名称</label>
-                 <input 
+                 <input maxLength={200}
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
                     placeholder="例如：腾讯 CSIG"
@@ -48,7 +49,7 @@ const FastTrackSetupView: React.FC<Props> = ({ onStart, onBack }) => {
               </div>
               <div>
                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2">职位描述 (JD)</label>
-                 <textarea 
+                 <textarea maxLength={20000}
                     value={jdText}
                     onChange={(e) => setJdText(e.target.value)}
                     placeholder="粘贴 JD 核心内容..."
@@ -69,7 +70,7 @@ const FastTrackSetupView: React.FC<Props> = ({ onStart, onBack }) => {
 
            <div>
                <label className="block text-xs font-bold text-slate-400 uppercase mb-2">简历文本</label>
-               <textarea 
+               <textarea maxLength={20000}
                   value={resumeText}
                   onChange={(e) => setResumeText(e.target.value)}
                   placeholder="为了确保准确性，请直接粘贴你的简历文本内容..."
@@ -81,13 +82,13 @@ const FastTrackSetupView: React.FC<Props> = ({ onStart, onBack }) => {
       </div>
 
       <div className="mt-10 flex justify-center">
-         <button 
+         <button
             onClick={() => isReady && onStart(companyName, jdText, resumeText)}
             disabled={!isReady}
             className="group px-12 py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-xl shadow-slate-300 hover:bg-slate-800 hover:scale-[1.02] disabled:opacity-50 disabled:scale-100 transition-all flex items-center gap-3 text-lg"
          >
             <Play size={20} className="fill-current" />
-            生成考题并开始面试
+            准备好，开始模拟面试
          </button>
       </div>
     </div>

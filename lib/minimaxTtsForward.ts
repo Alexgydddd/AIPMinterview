@@ -7,14 +7,14 @@ import {
   DEFAULT_MINIMAX_TTS_PAYLOAD,
   MINIMAX_T2A_DEFAULT_BASE,
   type MinimaxTtsClientOverrides,
-} from "./minimaxTtsPreset";
+} from "./minimaxTtsPreset.js";
 
 export {
   DEFAULT_MINIMAX_TTS_PAYLOAD,
   DEFAULT_PM_VOICE_SETTING,
   MINIMAX_T2A_DEFAULT_BASE,
   type MinimaxTtsClientOverrides,
-} from "./minimaxTtsPreset";
+} from "./minimaxTtsPreset.js";
 
 type MinimaxTtsResponse = {
   data?: { audio?: string; status?: number } | null;
@@ -60,7 +60,7 @@ export function buildMinimaxTtsPayload(
 
 function hexToUint8Array(hex: string): Uint8Array {
   const clean = hex.replace(/\s/g, "");
-  if (clean.length % 2 !== 0) throw new Error("Invalid hex audio payload");
+  if (!/^[0-9a-f]+$/i.test(clean) || clean.length % 2 !== 0) throw new Error("Invalid hex audio payload");
   const out = new Uint8Array(clean.length / 2);
   for (let i = 0; i < clean.length; i += 2) {
     out[i / 2] = parseInt(clean.slice(i, i + 2), 16);
@@ -88,6 +88,7 @@ export async function fetchMinimaxTtsMp3(
     method: "POST",
     headers,
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
   });
 
   const raw = await r.text();

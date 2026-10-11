@@ -11,6 +11,8 @@ import {
 
 export type { MinimaxTtsClientOverrides };
 
+import { apiFetch } from './apiClient';
+
 const TTS_PATH = "/api/tts";
 
 export const MIME_MP3 = "audio/mpeg";
@@ -40,7 +42,7 @@ export async function synthesizeSpeech(
   text: string,
   overrides?: SynthesizeSpeechOptions
 ): Promise<SynthesizeSpeechResult> {
-  const res = await fetch(TTS_PATH, {
+  const res = await apiFetch(TTS_PATH, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, ...overrides }),

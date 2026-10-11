@@ -1,102 +1,75 @@
+# AIPM · 项目经理面试教练
 
-# AI 项目经理面试全流程辅助平台
+面向个人求职者的小范围试用版：岗位分析 → 简历诊断 → 简历表达优化 → 逐轮模拟面试 → 复盘与针对性再练。
 
-> 你的专属智能「面试官」兼「简历毒舌教练」
+当前版本为 **0.1.0**。这是一套练习工具，评分不代表真实招聘结果。首版聚焦文字问答，面试问题朗读为可选项。
 
----
+## 本地运行
 
-## 核心功能
+需要 Node.js 22.13 或以上版本。
 
-### 1. JD 深度分析
+```sh
+npm ci
+cp .env.example .env.local
+npm run dev
+```
 
-- 智能解析招聘信息，提取**公司、行业、核心产品**及**岗位所需技能与画像**。
-- 生成**结构化能力要素列表**，清晰呈现「硬技能 / 软技能」及其在目标公司的具体应用场景（如：用加粗高亮关键词描述与 JD 的精准匹配）。
+在本机 `.env.local` 配置服务端变量：
 
-### 2. 毒舌简历诊断
+| 变量 | 用途 |
+| --- | --- |
+| `AI_API_KEY` | 必填，文本模型密钥；也支持 `OPENAI_API_KEY` |
+| `AI_BASE_URL` | 默认 `https://api.deepseek.com/v1`；也支持 `OPENAI_BASE_URL` |
+| `AI_MODEL` | 默认 `deepseek-chat`，模型在服务端选定 |
+| `BETA_ACCESS_CODE` | 邀请码；所有线上部署必填，本地开发可以留空 |
+| `SILICONFLOW_API_KEY` | 可选，图片文字识别 |
+| `MINIMAX_API_KEY` | 可选，问题朗读；需要时另配 `MINIMAX_GROUP_ID` |
 
-- 上传简历后，AI 会对内容逐条**严格批判性点评**，从格式、内容到影响力三大维度逐一“吐槽”并打分。
-- 支持分点展示每条改进项、**原文VS批评VS具体优化建议**，真正实现“有据可依”而不是空泛泛。
+不使用 `VITE_` 前缀配置密钥。不要提交真实密钥或邀请码。本地开发与 Vercel API 使用相同的服务端逻辑。
 
-### 3. 智能结构化重写
+## 文件和资料
 
-- 一键结构化重写简历关键部分，确保所有输出为**严谨 JSON 格式**，字段明晰，内容全部用中文。
-- 输出内容完全对齐 JD 要求，包括：一条核心竞争力概述、教育经历、每份工作经历（角色、项目名、难点、解决方案与最终结果）。
+- 支持 2 MB 内、15 页内的文字 PDF；在浏览器提取文字后回填输入框，用户可检查修改。
+- 支持 PNG、JPEG、WebP；图片识别会将图片发送至配置的 SiliconFlow 服务。
+- 扫描 PDF、加密或不能提取文字的 PDF，会提示粘贴文字或上传页面截图。
+- 输入上限为 20,000 字；面试每轮回答最多 4,000 字。
+- 练习进度、简历、对话与报告保存在当前标签页的 `sessionStorage`，可以刷新恢复。岗位分析缓存在 `localStorage` 保留 7 天。
+- 页面底部可清除本产品的本机练习资料和岗位缓存。其他网站/应用的存储不会被清除。
+- 分析和文字面试将输入发送至配置的文本模型服务；问题朗读会将问题文本发送至 MiniMax。应用没有账号数据库，服务端不主动保存简历/对话，也不在生产日志中记录输入内容。模型服务商和托管平台的处理与留存取决于其配置和条款。
+- 导出的简历是待核对的草稿。提示词要求保留真实事实，不编造经历或指标；仍需用户核实。
 
-### 4. 面试导师人设陪练
+## 验证
 
-- 内置“严肃但风趣”的AI面试官，自动基于每次对话历史和简历反馈，**步步引导、及时总结**。
-- 支持围绕每条批评建议的**深度追问、反思与逐步优化**，交互过程更贴合真实面试场景。
+```sh
+npm run check
+```
 
----
+执行类型检查、8 个服务/结果校验回归测试及生产构建。GitHub Actions 使用相同检查。
 
-## 运行与体验
+浏览器验收可使用独立的本地测试服务，不需要真实模型或付费调用：
 
-1. **安装依赖**
-   ```bash
-   pnpm install
-   ```
-2. **本地开发启动**
-   ```bash
-   pnpm dev
-   ```
-3. **环境变量**
+```sh
+npx tsx tests/fixtureProvider.ts
+```
 
-   **本地开发（`pnpm dev`）**  
-   Vite 会把 `POST /api/proxy`、`POST /api/tts` 转到内置中间件。可在 `.env` / `.env.local` 中配置：
-   - 大模型（文本）：`AI_API_KEY`、`AI_BASE_URL`（推荐），或开发兼容 `VITE_AI_*`
-   - MiniMax 语音（`/api/tts`）：`MINIMAX_API_KEY`；若控制台要求再配 `MINIMAX_GROUP_ID`；可选 `MINIMAX_API_BASE`（默认 `https://api.minimax.io`）
+另开终端：
 
-   **部署到 Vercel（或其它运行 `api/proxy.ts` 的环境）**  
-   在平台后台配置**仅服务端**变量（勿加 `VITE_` 前缀）：
-   - `AI_API_KEY`（或 `OPENAI_API_KEY`）
-   - `AI_BASE_URL`（或 `OPENAI_BASE_URL`，对接 DeepSeek 等兼容网关时填写对应 base URL）
+```sh
+AI_API_KEY=test-only AI_BASE_URL=http://127.0.0.1:4319/v1 BETA_ACCESS_CODE=test-invite npm run dev -- --port 4320 --strictPort
+```
 
+邀请码为 `test-invite`。这里的回答和评分全部是测试数据，不能用来评估真实模型质量。测试服务第一次报告返回无效结构；包含「测试重试」的回答首次会触发接口失败，用于验收重试。
 
-   静态预览 `pnpm preview` **不包含** `/api/proxy` 与 `/api/tts`，需部署到 Vercel 或使用 `pnpm dev` / `vercel dev`。
+## Vercel 小范围试用发布
 
-4. **构建（可选）**
-   ```bash
-   pnpm build
-   ```
+1. 使用现有项目连接本仓库，构建命令 `npm run build`，输出目录 `dist`，Node 版本至少为 22.x。
+2. 在 **Preview** 配置文本模型变量及随机生成的 `BETA_ACCESS_CODE`（建议至少 24 字符），先部署预览分支。没有邀请码配置时，线上 API 会拒绝访问。
+3. 需要图片识别/问题朗读时再配置相应服务；纯文字路径不依赖这两个可选服务。
+4. 用合成 JD 和脱敏简历验收两条路径、失败重试、刷新恢复、报告导出，确认费用和响应时间。
+5. 验收通过后再将同样的配置设到 **Production** 并发布。
 
----
+邀请码是邀请制试用入口，不是账号系统，也没有用户级计费/配额。控制邀请人数，并在模型服务商设置费用预算/告警；若扩大开放，需要持久化限流、账号与配额机制。
 
-## 部署到 Vercel
+`npm run preview` 只预览静态构建，不包含 API。生产 API 位于 `api/*.ts`，单次上游文本/OCR 请求最多等待 45 秒、朗读 20 秒；客户端也有超时。
 
-项目根目录已包含 **`vercel.json`**：`framework` 为 **Vite**，静态资源输出 **`dist`**，根目录 **`api/*.ts`** 会作为 Serverless Functions 部署（`POST /api/proxy`、`POST /api/tts`）。
-
-1. 在 [Vercel](https://vercel.com) 新建项目，导入本仓库（或使用 CLI：`npx vercel`）。
-2. **Build & Output**：一般无需改默认项；与 `vercel.json` 一致即可（`npm run build` → `dist`）。
-3. **环境变量**（Project → Settings → Environment Variables），至少为 **Production**（建议 Preview 同步一份以便预览环境可用）：
-   | 变量 | 说明 |
-   |------|------|
-   | `AI_API_KEY` 或 `OPENAI_API_KEY` | 大模型密钥（仅服务端，`/api/proxy`） |
-   | `AI_BASE_URL` 或 `OPENAI_BASE_URL` | 可选；对接 DeepSeek 等时填写兼容网关 Base URL |
-   | `MINIMAX_API_KEY` | MiniMax TTS（`/api/tts`）；可选 `MINIMAX_GROUP_ID`、`MINIMAX_API_BASE` |
-
-
-
-本地联调全栈可使用：`npx vercel dev`（同时拉起 Vite 与 API，视 CLI 提示操作）。
-
----
-
-## 技术亮点
-
-- 基于 Vite + React，前后端接口零耦合。
-- 支持多大模型厂商接入（DeepSeek/OpenAI 等）。
-- 前端使用 TypeScript `类型驱动` 保证输入输出结构化。
-- 智能提示和 JSON Schema 校验，确保大模型输出高一致性。
-
----
-
-## 典型应用场景
-
-- **求职者/PM** —— 快速洞察目标岗位用人“真需求”，精准补齐能力短板。
-- **HR/招聘官** —— 批量诊断多人简历，辅助初筛、提升人才画像匹配度。
-- **AI面试陪练** —— 针对简历亮点与不足，自动化生成专业面试“拷问”与针对性成长建议。
-
----
-
-> 🚀 让 AI 成为你的下一个“简历导师”与“职业规划陪跑教练”！
-
-
+本轮实际验收与待完成项见 [发布验收记录](docs/RELEASE_READINESS.md)。
